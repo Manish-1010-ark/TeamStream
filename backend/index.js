@@ -2,7 +2,10 @@
 
 import express from "express";
 import cors from "cors";
+
 import authRoutes from "./authRoutes.js";
+import workspaceRoutes from "./workspaceRoutes.js";
+
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -16,6 +19,7 @@ app.use(express.json()); // Parses incoming JSON requests
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use('/api/workspaces', workspaceRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

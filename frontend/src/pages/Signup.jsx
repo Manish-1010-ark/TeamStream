@@ -5,6 +5,7 @@ import { useNavigate, Link } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout";
 
 function Signup() {
+  const [name, setName] = useState(""); // 1. Add state for name
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,6 +21,7 @@ function Signup() {
 
     try {
       await axios.post("http://localhost:3001/api/auth/signup", {
+        name,
         email,
         password,
       });
@@ -37,6 +39,25 @@ function Signup() {
   return (
     <AuthLayout title="Create Your Account">
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* 2. Add the new input field for Display Name */}
+        <div>
+          <label
+            className="block text-sm font-semibold text-slate-400 mb-2"
+            htmlFor="name"
+          >
+            Display Name
+          </label>
+          <input
+            id="name"
+            type="text"
+            placeholder="Your Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-4 py-3 bg-slate-800/70 border border-slate-600/50 rounded-xl text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all duration-200"
+            required
+          />
+        </div>
+
         <div>
           <label
             className="block text-sm font-semibold text-slate-400 mb-2"

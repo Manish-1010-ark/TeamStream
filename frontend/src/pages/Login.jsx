@@ -17,10 +17,18 @@ function Login() {
     setError("");
 
     try {
-      await axios.post("http://localhost:3001/api/auth/login", {
-        email,
-        password,
-      });
+      // The login API returns the session data
+      const { data } = await axios.post(
+        "http://localhost:3001/api/auth/login",
+        {
+          email,
+          password,
+        }
+      );
+
+      // Save the session to localStorage
+      localStorage.setItem("session", JSON.stringify(data.session));
+
       navigate("/dashboard");
     } catch (error) {
       setError(error.response?.data?.error || "Invalid credentials");

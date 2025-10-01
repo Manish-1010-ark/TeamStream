@@ -1,17 +1,26 @@
 // backend/authRoutes.js
 
-import express from 'express';
-import { supabase } from './supabaseClient.js';
+import express from "express";
+import { supabase } from "./supabaseClient.js";
 
 const router = express.Router();
 
 // Signup Route
-router.post('/signup', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+router.post("/signup", async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!email || !password || !name) {
+    return res.status(400).json({ error: "Email and password are required" });
   }
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  // FIX: Custom data must be passed inside an options.data object
+  const { data, error } = await supabase.auth.signUp({
+    email: email,
+    password: password,
+    options: {
+      data: {
+        display_name: name, // This will be stored in the user's metadata
+      },
+    },
+  });
 
   if (error) {
     return res.status(400).json({ error: error.message });
@@ -20,12 +29,15 @@ router.post('/signup', async (req, res) => {
 });
 
 // Login Route
-router.post('/login', async (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+    return res.status(400).json({ error: "Email and password are required" });
   }
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   if (error) {
     return res.status(400).json({ error: error.message });
@@ -34,16 +46,16 @@ router.post('/login', async (req, res) => {
 });
 
 // NEW Forgot Password Route
-router.post('/forgot-password', async (req, res) => {
+router.post("/forgot-password", async (req, res) => {
   const { email } = req.body;
   const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: 'http://localhost:5173/update-password', // The URL to your password update page
+    redirectTo: "http://localhost:5173/update-password", // The URL to your password update page
   });
 
   if (error) {
     return res.status(400).json({ error: error.message });
   }
-  res.status(200).json({ message: 'Password reset email sent.' });
+  res.status(200).json({ message: "Password reset email sent." });
 });
 
 export default router;
