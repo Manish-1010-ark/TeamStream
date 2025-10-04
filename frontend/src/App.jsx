@@ -14,7 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import WorkspaceLayout from "./components/WorkspaceLayout";
 import ChatPage from "./pages/workspace/ChatPage";
 import DocumentsPage from "./pages/workspace/DocumentsPage";
-import TasksPage from "./pages/workspace/TasksPage";
+import TaskBoardPage from "./pages/workspace/TaskBoardPage";
 import WhiteboardPage from "./pages/workspace/WhiteboardPage";
 import VideoPage from "./pages/workspace/VideoPage";
 
@@ -33,7 +33,7 @@ function App() {
         <Route path="/workspace/:workspaceSlug" element={<WorkspaceLayout />}>
           <Route path="chat" element={<ChatPage />} />
           <Route path="documents" element={<DocumentsPage />} />
-          <Route path="tasks" element={<TasksPage />} />
+          <Route path="tasks" element={<TaskBoardPage />} />
           <Route path="whiteboard" element={<WhiteboardPage />} />
           <Route path="video" element={<VideoPage />} />
           {/* Default redirect to chat when just accessing workspace */}

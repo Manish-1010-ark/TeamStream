@@ -24,6 +24,8 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001; // Use environment variable or fallback
 
+app.set('socketio', io); 
+
 // Middleware
 app.use(cors());
 app.use(express.json());
