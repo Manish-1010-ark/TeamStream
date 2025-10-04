@@ -101,4 +101,33 @@ router.post("/join", async (req, res) => {
   res.status(200).json({ message: "Successfully joined workspace." });
 });
 
+// GET all messages for a specific workspace
+router.get("/:slug/messages", async (req, res) => {
+  const { slug } = req.params;
+
+  // First, get the workspace ID from the slug
+  const { data: workspace, error: wsError } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("slug", slug)
+    .single();
+
+  if (wsError || !workspace) {
+    return res.status(404).json({ error: "Workspace not found" });
+  }
+
+  // Then, fetch messages by querying our new view
+  const { data: messages, error: msgError } = await supabase
+    .from("messages_with_profiles") // Query the new view
+    .select("*") // Select all its columns
+    .eq("workspace_id", workspace.id) // Filter by the correct workspace ID
+    .order("created_at", { ascending: true });
+
+  if (msgError) return res.status(500).json({ error: msgError.message });
+
+  res.status(200).json(messages);
+});
+
+
+
 export default router;
