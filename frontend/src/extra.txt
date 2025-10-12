@@ -1,0 +1,28 @@
+ User's Browser (Frontend)         Your Backend Server            Liveblocks Cloud
+ -------------------------         -------------------            ----------------
+1. Opens document page
+
+2. POST /api/liveblocks/auth  --->  3. Receives request,
+   (with your app's token)           `requireAuth` verifies user.
+
+                                 4. Asks Liveblocks SDK
+                                    to authorize...      --->   5. Verifies your secret key,
+                                                                  generates temporary token.
+
+                                                      <---   6. Returns temp. token.
+                                 7. Receives temp. token.
+
+   <---------------------------   8. Sends temp. token back.
+9. Receives temp. token for Liveblocks.
+Phase 2: Collaboration
+ User's Browser (Frontend)                                        Liveblocks Cloud
+ -------------------------                                        ----------------
+10. Connects to Liveblocks WebSocket -------------------------->  11. Authenticates temp. token,
+    (using temporary token)                                          establishes connection.
+
+12. User types. Changes are
+    sent via WebSocket        ---------------------------------->  13. Receives, merges, and
+                                                                      broadcasts changes to
+                                                                      all other connected users.
+
+    <-------------------------- Other users receive updates.

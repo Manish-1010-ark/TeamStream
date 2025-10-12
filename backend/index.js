@@ -1,30 +1,28 @@
 // backend/index.js
 import express from "express";
 import cors from "cors";
-import http from "http"; // 1. Import http
-import { Server } from "socket.io"; // 2. Import Server from socket.io
-import { supabase } from "./supabaseClient.js"; // 3. Import supabase client
+import http from "http";
+import { Server } from "socket.io";
+import { supabase } from "./supabaseClient.js";
+import liveblocksAuth from "./liveblocksAuth.js";
 
 import authRoutes from "./authRoutes.js";
 import workspaceRoutes from "./workspaceRoutes.js";
-
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app); // 4. Create an http server from the Express app
+const server = http.createServer(app);
 const io = new Server(server, {
-  // 5. Initialize Socket.io
   cors: {
-    origin: "http://localhost:5173", // Your frontend URL
+    origin: "http://localhost:5173",
     methods: ["GET", "POST"],
   },
 });
 
-const PORT = process.env.PORT || 3001; // Use environment variable or fallback
-
-app.set('socketio', io); 
+app.set("socketio", io);
+const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
@@ -33,8 +31,9 @@ app.use(express.json());
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/workspaces", workspaceRoutes);
+app.use("/api/liveblocks", liveblocksAuth);
 
-// 6. --- Add Socket.io Real-time Logic ---
+// Socket.io (Chat) Logic
 io.on("connection", (socket) => {
   console.log("✅ A user connected:", socket.id);
 
@@ -86,7 +85,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// 7. Use server.listen instead of app.listen
+// Start the server
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

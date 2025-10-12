@@ -1,5 +1,5 @@
 // frontend/src/components/WorkspaceLayout.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Outlet, NavLink, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import IconChat from "./icons/IconChat";
@@ -8,40 +8,51 @@ import IconTasks from "./icons/IconTasks";
 import IconWhiteboard from "./icons/IconWhiteboard";
 import IconVideo from "./icons/IconVideo";
 import ProfileDropdown from "./ProfileDropdown";
-import CopyButton from "./CopyButton"; // 1. IMPORT THE NEW COMPONENT
+import CopyButton from "./CopyButton";
 
 function WorkspaceLayout() {
   const navigate = useNavigate();
-  const [workspaceId, setWorkspaceId] = useState(null); // <-- Add state for the ID
+  const [workspaceId, setWorkspaceId] = useState(null);
   const { workspaceSlug } = useParams();
   const [workspaceName, setWorkspaceName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  const getAuthHeader = () => {
+  // For performance, wrap getAuthHeader in useCallback
+  const getAuthHeader = useCallback(() => {
     const session = JSON.parse(localStorage.getItem("session"));
     if (!session || !session.access_token) {
       navigate("/login");
-      return {};
+      return null;
     }
     return { Authorization: `Bearer ${session.access_token}` };
-  };
+  }, [navigate]);
 
+  // The corrected useEffect hook
   useEffect(() => {
+    // 1. Check for a valid session at the very beginning.
+    const session = JSON.parse(localStorage.getItem("session"));
+    if (!session || !session.access_token) {
+      navigate("/login");
+      return; // Stop the effect if not authenticated.
+    }
+
     const fetchWorkspaceData = async () => {
       setLoading(true);
       try {
-        // PERFORMANCE: Fetching only the current workspace data for efficiency.
+        const headers = getAuthHeader();
+        if (!headers) return; // Stop if getAuthHeader initiated a redirect
+
         const { data: currentWorkspace } = await axios.get(
           `http://localhost:3001/api/workspaces/${workspaceSlug}`,
-          { headers: getAuthHeader() }
+          { headers }
         );
         setWorkspaceName(currentWorkspace.name);
-        setWorkspaceId(currentWorkspace.id); // <-- Save the ID for the copy button
+        setWorkspaceId(currentWorkspace.id);
 
-        const session = JSON.parse(localStorage.getItem("session"));
-        if (session?.user) {
+        if (session.user) {
           setUserEmail(session.user.email || "user@example.com");
           setUserName(
             session.user?.user_metadata?.display_name ||
@@ -51,14 +62,23 @@ function WorkspaceLayout() {
         }
       } catch (error) {
         console.error("Failed to fetch workspace data", error);
-        navigate("/dashboard"); // Redirect if workspace isn't found
+
+        // 2. Specifically handle 401 Unauthorized errors
+        if (error.response && error.response.status === 401) {
+          localStorage.removeItem("session"); // Clear the invalid session
+          navigate("/login");
+        } else {
+          // Handle other errors (like workspace not found)
+          navigate("/dashboard");
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchWorkspaceData();
-  }, [workspaceSlug]);
+    // 3. Add navigate and getAuthHeader to the dependency array
+  }, [workspaceSlug, navigate, getAuthHeader]);
 
   const handleLogout = () => {
     localStorage.removeItem("session");
@@ -69,10 +89,12 @@ function WorkspaceLayout() {
     navigate("/dashboard");
   };
 
+  const toggleSidebar = () => setIsSidebarCollapsed((prev) => !prev);
+
   const navItems = [
     { path: "chat", icon: IconChat, label: "Chat" },
     { path: "documents", icon: IconDocuments, label: "Documents" },
-    { path: "tasks", icon: IconTasks, label: "Tasks" },
+    { path: "tasks", icon: IconTasks, label: "Task Board" },
     { path: "whiteboard", icon: IconWhiteboard, label: "Whiteboard" },
     { path: "video", icon: IconVideo, label: "Video" },
   ];
@@ -82,61 +104,90 @@ function WorkspaceLayout() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-slate-950">
+    <div className="h-screen bg-slate-950 text-slate-300 flex overflow-hidden">
       {/* Sidebar */}
-      {/* REVERT 1: Updated width to w-72 to prevent text overlap. */}
-      <aside className="w-86 bg-slate-900 border-r border-slate-800 flex flex-col relative overflow-hidden">
-        {/* Logo & Back Button */}
-        <div className="p-6 border-b border-slate-800">
-          <h1 className="text-2xl font-bold text-cyan-400 mb-2">TeamStream</h1>
+      <aside
+        className={`h-screen bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out ${
+          isSidebarCollapsed ? "w-20" : "w-72"
+        }`}
+      >
+        {/* Top Section */}
+        <div className="p-4 border-b border-slate-800 flex-shrink-0">
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-cyan-300 transition-colors"
+              aria-label={
+                isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+              }
+            >
+              <svg
+                className={`transition-transform duration-300 ${
+                  isSidebarCollapsed ? "rotate-180" : ""
+                }`}
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+            </button>
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed ? "w-0 opacity-0" : "w-full opacity-100"
+              }`}
+            >
+              <h1 className="text-2xl font-bold text-cyan-400 whitespace-nowrap">
+                TeamStream
+              </h1>
+            </div>
+          </div>
           <button
             onClick={handleBackToDashboard}
-            className="text-sm text-slate-400 hover:text-cyan-400 transition-colors flex items-center gap-2"
+            className={`w-full text-sm font-semibold transition-all duration-200 flex items-center space-x-3 px-4 py-3 rounded-lg bg-slate-800 text-slate-300 hover:bg-cyan-500 hover:text-slate-900 ${
+              isSidebarCollapsed ? "justify-center" : ""
+            }`}
           >
             <svg
-              width="16"
-              height="16"
+              className="flex-shrink-0"
+              width="18"
+              height="18"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
               <line x1="19" y1="12" x2="5" y2="12"></line>
               <polyline points="12 19 5 12 12 5"></polyline>
             </svg>
-            Back to Dashboard
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed ? "w-0 opacity-0" : "w-full opacity-100"
+              }`}
+            >
+              <span className="whitespace-nowrap">Back to Dashboard</span>
+            </div>
           </button>
         </div>
 
-        {/* Workspace Info */}
-        <div className="px-6 py-4 border-b border-slate-800">
-          <div className="flex justify-between items-center mb-1">
-            <p className="text-xs text-slate-500 uppercase tracking-wide">
-              Current Workspace
-            </p>
-            {/* 2. ADD THE COPY BUTTON (it will only show when not loading) */}
-            {!loading && <CopyButton textToCopy={workspaceId} />}
-          </div>
-          {loading ? (
-            <div className="h-6 bg-slate-800 rounded animate-pulse"></div>
-          ) : (
-            <p className="text-sm font-semibold text-slate-200 truncate">
-              {workspaceName}
-            </p>
-          )}
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-2">
+        {/* Navigation Section */}
+        <nav className="flex-1 p-4 ml-3 pl-1 space-y-2 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
-              // REVERT 2: Restored original NavLink logic for icon color.
               <NavLink
                 key={item.path}
                 to={`/workspace/${workspaceSlug}/${item.path}`}
                 className={({ isActive }) =>
-                  `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                  `flex items-center space-x-3 px-3 py-3 rounded-lg transition-colors ${
                     isActive
                       ? "bg-cyan-500/10 text-cyan-400"
                       : "text-slate-400 hover:bg-slate-800 hover:text-cyan-300"
@@ -146,34 +197,62 @@ function WorkspaceLayout() {
                 {({ isActive }) => (
                   <>
                     <Icon
-                      className={isActive ? "text-cyan-400" : "text-slate-400"}
+                      className={`flex-shrink-0 ${
+                        isActive ? "text-cyan-400" : "text-slate-400"
+                      }`}
                     />
-                    <span className="font-medium">{item.label}</span>
+                    <div
+                      className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                        isSidebarCollapsed
+                          ? "w-0 opacity-0"
+                          : "w-full opacity-100"
+                      }`}
+                    >
+                      <span className="font-medium whitespace-nowrap">
+                        {item.label}
+                      </span>
+                    </div>
                   </>
                 )}
               </NavLink>
             );
           })}
         </nav>
+
+        {/* Profile Section */}
+        <div className="border-t border-slate-800 flex-shrink-0 p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-shrink-0">
+              <ProfileDropdown
+                userName={userName}
+                userEmail={userEmail}
+                getInitials={getInitials}
+                handleLogout={handleLogout}
+                navigate={navigate}
+                workspaceSlug={workspaceSlug}
+                isSidebarCollapsed={isSidebarCollapsed}
+              />
+            </div>
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed ? "w-0 opacity-0" : "w-full opacity-100"
+              }`}
+            >
+              <p className="font-semibold text-sm text-slate-200 truncate whitespace-nowrap">
+                {userName}
+              </p>
+              <p className="text-xs text-slate-400 truncate whitespace-nowrap">
+                {userEmail}
+              </p>
+            </div>
+          </div>
+        </div>
       </aside>
 
-      {/* Main Area (Header + Content) */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="absolute top-6 right-6 z-20">
-          <div className="w-full flex justify-end">
-            <ProfileDropdown
-              userName={userName}
-              userEmail={userEmail}
-              getInitials={getInitials}
-              handleLogout={handleLogout}
-            />
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
-        </main>
-      </div>
+      {/* Main Content Area */}
+      <main className="flex-1 h-full overflow-hidden">
+        <Outlet />
+      </main>
     </div>
   );
 }
