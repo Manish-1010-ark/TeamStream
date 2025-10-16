@@ -13,6 +13,7 @@ import {
   useOthers,
   useStorage,
   useMutation,
+  useHistory,
 } from "@liveblocks/react";
 import { LiveObject, LiveMap } from "@liveblocks/client";
 
@@ -29,8 +30,9 @@ const COLORS = [
 const GRID_SIZE = 40;
 const MIN_SIZE = 50;
 const ARROW_SIZE = 15;
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 3;
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 5;
+const ZOOM_SENSITIVITY = 0.0005;
 
 const SHAPE_CONFIGS = {
   rectangle: (x, y, c) => ({
@@ -40,8 +42,22 @@ const SHAPE_CONFIGS = {
     width: 150,
     height: 100,
     fill: c,
+    stroke: "#000000", // 👈 Add stroke color
+    strokeWidth: 5, // 👈 Add stroke width
+    strokeStyle: "solid", // 👈 Add stroke style ("solid" | "dashed" | "dotted")
+    opacity: 1, // 👈 Add opacity
   }),
-  circle: (x, y, c) => ({ type: "circle", x, y, radius: 60, fill: c }),
+  circle: (x, y, c) => ({
+    type: "circle",
+    x,
+    y,
+    radius: 60,
+    fill: c,
+    stroke: "#000000", // 👈 Add stroke color
+    strokeWidth: 2, // 👈 Add stroke width
+    strokeStyle: "solid", // 👈 Add stroke style ("solid" | "dashed" | "dotted")
+    opacity: 1, // 👈 Add opacity
+  }),
   diamond: (x, y, c) => ({
     type: "diamond",
     x,
@@ -49,19 +65,57 @@ const SHAPE_CONFIGS = {
     width: 100,
     height: 70,
     fill: c,
+    stroke: "#000000", // 👈 Add stroke color
+    strokeWidth: 2, // 👈 Add stroke width
+    strokeStyle: "solid", // 👈 Add stroke style ("solid" | "dashed" | "dotted")
+    opacity: 1, // 👈 Add opacity
   }),
-  ellipse: (x, y, c) => ({ type: "ellipse", x, y, rx: 80, ry: 50, fill: c }),
-  arrow: (x, y, c) => ({ type: "arrow", x, y, x2: x + 150, y2: y, fill: c }),
-  line: (x, y, c) => ({ type: "line", x, y, x2: x + 150, y2: y, fill: c }),
+  ellipse: (x, y, c) => ({
+    type: "ellipse",
+    x,
+    y,
+    rx: 80,
+    ry: 50,
+    fill: c,
+    stroke: "#000000",
+    strokeWidth: 2, // 👈 Add stroke width
+    strokeStyle: "solid", // 👈 Add stroke style ("solid" | "dashed" | "dotted")
+    opacity: 1,
+  }),
+  arrow: (x, y, c) => ({
+    type: "arrow",
+    x,
+    y,
+    x2: x + 150,
+    y2: y,
+    stroke: c,
+    strokeWidth: 2, // 👈 Add stroke width
+    strokeStyle: "solid", // 👈 Add stroke style ("solid" | "dashed" | "dotted")
+    opacity: 1, // 👈 Add opacity
+  }),
+  line: (x, y, c) => ({
+    type: "line",
+    x,
+    y,
+    x2: x + 150,
+    y2: y,
+    stroke: c,
+    strokeWidth: 2, // 👈 Add stroke width
+    strokeStyle: "solid", // 👈 Add stroke style ("solid" | "dashed" | "dotted")
+    opacity: 1, // 👈 Add opacity
+  }),
   textBox: (x, y) => ({
     type: "textBox",
     x,
     y,
     width: 200,
     height: 80,
-    fill: "#1e293b",
+    fill: "transparent", // Make background transparent
+    stroke: "#ffffff",
+    strokeWidth: 1,
     text: "",
-    textColor: "#fff",
+    textColor: "#ffffff",
+    opacity: 1,
   }),
 };
 
@@ -76,6 +130,61 @@ const TOOLS = [
 ];
 
 const getUserColor = (id) => COLORS[id % COLORS.length];
+
+// Coordinate transformation utilities
+const screenToCanvas = (screenX, screenY, camera) => ({
+  x: (screenX - camera.x) / camera.zoom,
+  y: (screenY - camera.y) / camera.zoom,
+});
+
+// Helper to get bounding box of any shape
+function getShapeBounds(shape) {
+  switch (shape.type) {
+    case "rectangle":
+      return {
+        x: shape.x,
+        y: shape.y,
+        width: shape.width,
+        height: shape.height,
+      };
+    case "circle":
+      return {
+        x: shape.x - shape.radius,
+        y: shape.y - shape.radius,
+        width: shape.radius * 2,
+        height: shape.radius * 2,
+      };
+    case "diamond": {
+      const w = shape.width || 80;
+      const h = shape.height || 80;
+      return { x: shape.x - w / 2, y: shape.y - h / 2, width: w, height: h };
+    }
+    case "ellipse":
+      return {
+        x: shape.x - shape.rx,
+        y: shape.y - shape.ry,
+        width: shape.rx * 2,
+        height: shape.ry * 2,
+      };
+    case "arrow":
+    case "line":
+      return {
+        x: Math.min(shape.x, shape.x2 || shape.x),
+        y: Math.min(shape.y, shape.y2 || shape.y),
+        width: Math.abs(shape.x - (shape.x2 || shape.x)),
+        height: Math.abs(shape.y - (shape.y2 || shape.y)),
+      };
+    case "textBox":
+      return {
+        x: shape.x,
+        y: shape.y,
+        width: shape.width,
+        height: shape.height,
+      };
+    default:
+      return { x: shape.x, y: shape.y, width: 0, height: 0 };
+  }
+}
 
 // Cursor Component
 const Cursor = React.memo(({ x, y, color, name }) => (
@@ -99,8 +208,8 @@ const Cursor = React.memo(({ x, y, color, name }) => (
   </g>
 ));
 
-// Custom Hook for Simple Drag (no x2/y2)
-const useDrag = (id, shape, onStart, zoom) => {
+// Custom Hook for Drag (canvas coordinates)
+const useDrag = (id, shape, onStart) => {
   const updatePos = useMutation(
     ({ storage }, x, y) => {
       const s = storage.get("shapes").get(id);
@@ -113,19 +222,18 @@ const useDrag = (id, shape, onStart, zoom) => {
   );
 
   return useCallback(
-    (e) => {
+    (e, camera) => {
       e.stopPropagation();
       onStart?.();
-      const target = e.currentTarget;
-      const svg = target.closest("svg");
-      const rect = svg.getBoundingClientRect();
-      const startOffsetX = (e.clientX - rect.left) / zoom - shape.x;
-      const startOffsetY = (e.clientY - rect.top) / zoom - shape.y;
+      const startCanvasX = shape.x;
+      const startCanvasY = shape.y;
+      const startScreenX = e.clientX;
+      const startScreenY = e.clientY;
 
       const move = (me) => {
-        const nx = (me.clientX - rect.left) / zoom - startOffsetX;
-        const ny = (me.clientY - rect.top) / zoom - startOffsetY;
-        updatePos(nx, ny);
+        const dx = (me.clientX - startScreenX) / camera.zoom;
+        const dy = (me.clientY - startScreenY) / camera.zoom;
+        updatePos(startCanvasX + dx, startCanvasY + dy);
       };
       const up = () => {
         document.removeEventListener("pointermove", move);
@@ -134,13 +242,27 @@ const useDrag = (id, shape, onStart, zoom) => {
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", up);
     },
-    [shape.x, shape.y, updatePos, onStart, zoom]
+    [shape.x, shape.y, updatePos, onStart]
   );
 };
 
-// Rectangle with resize
-const Rectangle = ({ id, shape, sel, onStart, zoom }) => {
-  const drag = useDrag(id, shape, onStart, zoom);
+// Helper function to get stroke dash array based on style
+const getStrokeDasharray = (strokeStyle) => {
+  switch (strokeStyle) {
+    case "dashed":
+      return "10, 10";
+    case "dotted":
+      return "3, 5";
+    default:
+      return "none";
+  }
+};
+
+// Rectangle
+const Rectangle = ({ id, shape, isSelected, onSelect, camera }) => {
+  const drag = useDrag(id, shape, () =>
+    onSelect(id, new MouseEvent("pointerdown"))
+  );
   const resize = useMutation(
     ({ storage }, w, h) => {
       const s = storage.get("shapes").get(id);
@@ -155,16 +277,14 @@ const Rectangle = ({ id, shape, sel, onStart, zoom }) => {
   const handleResize = useCallback(
     (e) => {
       e.stopPropagation();
-      const svg = e.currentTarget.closest("svg");
-      const rect = svg.getBoundingClientRect();
       const startX = e.clientX;
       const startY = e.clientY;
       const sw = shape.width;
       const sh = shape.height;
 
       const move = (me) => {
-        const dx = (me.clientX - startX) / zoom;
-        const dy = (me.clientY - startY) / zoom;
+        const dx = (me.clientX - startX) / camera.zoom;
+        const dy = (me.clientY - startY) / camera.zoom;
         resize(Math.max(MIN_SIZE, sw + dx), Math.max(MIN_SIZE, sh + dy));
       };
       const up = () => {
@@ -174,31 +294,52 @@ const Rectangle = ({ id, shape, sel, onStart, zoom }) => {
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", up);
     },
-    [shape.width, shape.height, resize, zoom]
+    [shape.width, shape.height, resize, camera.zoom]
   );
 
+  const handlePointerDown = (e) => {
+    onSelect(id, e);
+    if (e.target === e.currentTarget) {
+      drag(e, camera);
+    }
+  };
+
   return (
-    <g>
+    <g opacity={shape.opacity ?? 1}>
       <rect
         x={shape.x}
         y={shape.y}
         width={shape.width}
         height={shape.height}
         fill={shape.fill}
-        stroke={sel ? "#06b6d4" : "transparent"}
-        strokeWidth={sel ? 3 : 0}
-        onPointerDown={drag}
+        stroke={shape.stroke ?? "#000000"}
+        strokeWidth={shape.strokeWidth ?? 2}
+        strokeDasharray={getStrokeDasharray(shape.strokeStyle)}
+        onPointerDown={handlePointerDown}
         style={{ cursor: "move" }}
         rx="2"
       />
-      {sel && (
+      {isSelected && (
+        <rect
+          x={shape.x}
+          y={shape.y}
+          width={shape.width}
+          height={shape.height}
+          fill="transparent"
+          stroke="#06b6d4"
+          strokeWidth={3 / camera.zoom}
+          pointerEvents="none"
+          rx="2"
+        />
+      )}
+      {isSelected && (
         <circle
           cx={shape.x + shape.width}
           cy={shape.y + shape.height}
-          r="6"
+          r={6 / camera.zoom}
           fill="#06b6d4"
           stroke="white"
-          strokeWidth="2"
+          strokeWidth={2 / camera.zoom}
           onPointerDown={handleResize}
           style={{ cursor: "nwse-resize" }}
         />
@@ -207,9 +348,11 @@ const Rectangle = ({ id, shape, sel, onStart, zoom }) => {
   );
 };
 
-// Circle with radius resize
-const Circle = ({ id, shape, sel, onStart, zoom }) => {
-  const drag = useDrag(id, shape, onStart, zoom);
+// Circle
+const Circle = ({ id, shape, isSelected, onSelect, camera }) => {
+  const drag = useDrag(id, shape, () =>
+    onSelect(id, new MouseEvent("pointerdown"))
+  );
   const resize = useMutation(
     ({ storage }, r) => {
       const s = storage.get("shapes").get(id);
@@ -223,9 +366,8 @@ const Circle = ({ id, shape, sel, onStart, zoom }) => {
       e.stopPropagation();
       const startX = e.clientX;
       const sr = shape.radius;
-
       const move = (me) => {
-        const dx = (me.clientX - startX) / zoom;
+        const dx = (me.clientX - startX) / camera.zoom;
         resize(Math.max(20, sr + dx));
       };
       const up = () => {
@@ -235,29 +377,48 @@ const Circle = ({ id, shape, sel, onStart, zoom }) => {
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", up);
     },
-    [shape.radius, resize, zoom]
+    [shape.radius, resize, camera.zoom]
   );
 
+  const handlePointerDown = (e) => {
+    onSelect(id, e);
+    if (e.target === e.currentTarget) {
+      drag(e, camera);
+    }
+  };
+
   return (
-    <g>
+    <g opacity={shape.opacity ?? 1}>
       <circle
         cx={shape.x}
         cy={shape.y}
         r={shape.radius}
         fill={shape.fill}
-        stroke={sel ? "#06b6d4" : "transparent"}
-        strokeWidth={sel ? 3 : 0}
-        onPointerDown={drag}
+        stroke={shape.stroke ?? "#000000"}
+        strokeWidth={shape.strokeWidth ?? 2}
+        strokeDasharray={getStrokeDasharray(shape.strokeStyle)}
+        onPointerDown={handlePointerDown}
         style={{ cursor: "move" }}
       />
-      {sel && (
+      {isSelected && (
+        <circle
+          cx={shape.x}
+          cy={shape.y}
+          r={shape.radius}
+          fill="transparent"
+          stroke="#06b6d4"
+          strokeWidth={3 / camera.zoom}
+          pointerEvents="none"
+        />
+      )}
+      {isSelected && (
         <circle
           cx={shape.x + shape.radius}
           cy={shape.y}
-          r="6"
+          r={6 / camera.zoom}
           fill="#06b6d4"
           stroke="white"
-          strokeWidth="2"
+          strokeWidth={2 / camera.zoom}
           onPointerDown={handleResize}
           style={{ cursor: "ew-resize" }}
         />
@@ -267,59 +428,98 @@ const Circle = ({ id, shape, sel, onStart, zoom }) => {
 };
 
 // Diamond
-const Diamond = ({ id, shape, sel, onStart, zoom }) => {
-  const drag = useDrag(id, shape, onStart, zoom);
+const Diamond = ({ id, shape, isSelected, onSelect, camera }) => {
+  const drag = useDrag(id, shape, () =>
+    onSelect(id, new MouseEvent("pointerdown"))
+  );
   const w = shape.width || 80;
   const h = shape.height || 80;
   const pts = `${shape.x},${shape.y - h / 2} ${shape.x + w / 2},${shape.y} ${
     shape.x
   },${shape.y + h / 2} ${shape.x - w / 2},${shape.y}`;
+
+  const handlePointerDown = (e) => {
+    onSelect(id, e);
+    drag(e, camera);
+  };
+
   return (
-    <polygon
-      points={pts}
-      fill={shape.fill}
-      stroke={sel ? "#06b6d4" : "transparent"}
-      strokeWidth={sel ? 3 : 0}
-      onPointerDown={drag}
-      style={{ cursor: "move" }}
-    />
+    <g opacity={shape.opacity ?? 1}>
+      <polygon
+        points={pts}
+        fill={shape.fill}
+        stroke={shape.stroke ?? "#000000"}
+        strokeWidth={shape.strokeWidth ?? 2}
+        strokeDasharray={getStrokeDasharray(shape.strokeStyle)}
+        onPointerDown={handlePointerDown}
+        style={{ cursor: "move" }}
+      />
+      {isSelected && (
+        <polygon
+          points={pts}
+          fill="transparent"
+          stroke="#06b6d4"
+          strokeWidth={3 / camera.zoom}
+          pointerEvents="none"
+        />
+      )}
+    </g>
   );
 };
 
 // Ellipse
-const Ellipse = ({ id, shape, sel, onStart, zoom }) => {
-  const drag = useDrag(id, shape, onStart, zoom);
+const Ellipse = ({ id, shape, isSelected, onSelect, camera }) => {
+  const drag = useDrag(id, shape, () =>
+    onSelect(id, new MouseEvent("pointerdown"))
+  );
+
+  const handlePointerDown = (e) => {
+    onSelect(id, e);
+    drag(e, camera);
+  };
+
   return (
-    <ellipse
-      cx={shape.x}
-      cy={shape.y}
-      rx={shape.rx || 80}
-      ry={shape.ry || 50}
-      fill={shape.fill}
-      stroke={sel ? "#06b6d4" : "transparent"}
-      strokeWidth={sel ? 3 : 0}
-      onPointerDown={drag}
-      style={{ cursor: "move" }}
-    />
+    <g opacity={shape.opacity ?? 1}>
+      <ellipse
+        cx={shape.x}
+        cy={shape.y}
+        rx={shape.rx || 80}
+        ry={shape.ry || 50}
+        fill={shape.fill}
+        stroke={shape.stroke ?? "#000000"}
+        strokeWidth={shape.strokeWidth ?? 2}
+        strokeDasharray={getStrokeDasharray(shape.strokeStyle)}
+        onPointerDown={handlePointerDown}
+        style={{ cursor: "move" }}
+      />
+      {isSelected && (
+        <ellipse
+          cx={shape.x}
+          cy={shape.y}
+          rx={shape.rx || 80}
+          ry={shape.ry || 50}
+          fill="transparent"
+          stroke="#06b6d4"
+          strokeWidth={3 / camera.zoom}
+          pointerEvents="none"
+        />
+      )}
+    </g>
   );
 };
 
-// Arrow/Line with endpoint dragging - Fixed to read current values from storage
-const ArrowLine = ({ id, shape, sel, onStart, zoom, isArrow }) => {
+// ArrowLine
+const ArrowLine = ({ id, shape, isSelected, onSelect, camera, isArrow }) => {
   const updatePos = useMutation(
     ({ storage }, x, y) => {
       const s = storage.get("shapes").get(id);
       if (s) {
-        const currentX = s.get("x");
-        const currentY = s.get("y");
-        const currentX2 = s.get("x2");
-        const currentY2 = s.get("y2");
-        const dx = x - currentX;
-        const dy = y - currentY;
+        const dx = x - s.get("x");
+        const dy = y - s.get("y");
         s.set("x", x);
         s.set("y", y);
-        s.set("x2", currentX2 + dx);
-        s.set("y2", currentY2 + dy);
+        s.set("x2", s.get("x2") + dx);
+        s.set("y2", s.get("y2") + dy);
       }
     },
     [id]
@@ -327,11 +527,7 @@ const ArrowLine = ({ id, shape, sel, onStart, zoom, isArrow }) => {
 
   const updateEnd = useMutation(
     ({ storage }, x2, y2) => {
-      const s = storage.get("shapes").get(id);
-      if (s) {
-        s.set("x2", x2);
-        s.set("y2", y2);
-      }
+      storage.get("shapes").get(id)?.set("y2", y2).set("x2", x2);
     },
     [id]
   );
@@ -339,16 +535,16 @@ const ArrowLine = ({ id, shape, sel, onStart, zoom, isArrow }) => {
   const drag = useCallback(
     (e) => {
       e.stopPropagation();
-      onStart?.();
-      const svg = e.currentTarget.closest("svg");
-      const rect = svg.getBoundingClientRect();
-      const startOffsetX = (e.clientX - rect.left) / zoom - shape.x;
-      const startOffsetY = (e.clientY - rect.top) / zoom - shape.y;
+      onSelect(id, e);
+      const startCanvasX = shape.x;
+      const startCanvasY = shape.y;
+      const startScreenX = e.clientX;
+      const startScreenY = e.clientY;
 
       const move = (me) => {
-        const nx = (me.clientX - rect.left) / zoom - startOffsetX;
-        const ny = (me.clientY - rect.top) / zoom - startOffsetY;
-        updatePos(nx, ny);
+        const dx = (me.clientX - startScreenX) / camera.zoom;
+        const dy = (me.clientY - startScreenY) / camera.zoom;
+        updatePos(startCanvasX + dx, startCanvasY + dy);
       };
       const up = () => {
         document.removeEventListener("pointermove", move);
@@ -357,7 +553,7 @@ const ArrowLine = ({ id, shape, sel, onStart, zoom, isArrow }) => {
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", up);
     },
-    [shape.x, shape.y, updatePos, onStart, zoom]
+    [shape.x, shape.y, updatePos, onSelect, camera.zoom, id]
   );
 
   const dragEnd = useCallback(
@@ -367,9 +563,10 @@ const ArrowLine = ({ id, shape, sel, onStart, zoom, isArrow }) => {
       const rect = svg.getBoundingClientRect();
 
       const move = (me) => {
-        const nx = (me.clientX - rect.left) / zoom;
-        const ny = (me.clientY - rect.top) / zoom;
-        updateEnd(nx, ny);
+        const screenX = me.clientX - rect.left;
+        const screenY = me.clientY - rect.top;
+        const canvas = screenToCanvas(screenX, screenY, camera);
+        updateEnd(canvas.x, canvas.y);
       };
       const up = () => {
         document.removeEventListener("pointermove", move);
@@ -378,92 +575,73 @@ const ArrowLine = ({ id, shape, sel, onStart, zoom, isArrow }) => {
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", up);
     },
-    [updateEnd, zoom]
+    [updateEnd, camera]
   );
 
   const x2 = shape.x2 ?? shape.x + 150;
   const y2 = shape.y2 ?? shape.y;
+  const strokeColor = shape.stroke ?? shape.fill;
 
-  if (isArrow) {
+  const arrowHead = useMemo(() => {
+    if (!isArrow) return null;
     const angle = Math.atan2(y2 - shape.y, x2 - shape.x);
     const p1x = x2 - ARROW_SIZE * Math.cos(angle - Math.PI / 6);
     const p1y = y2 - ARROW_SIZE * Math.sin(angle - Math.PI / 6);
     const p2x = x2 - ARROW_SIZE * Math.cos(angle + Math.PI / 6);
     const p2y = y2 - ARROW_SIZE * Math.sin(angle + Math.PI / 6);
-
-    return (
-      <g>
-        <line
-          x1={shape.x}
-          y1={shape.y}
-          x2={x2}
-          y2={y2}
-          stroke={shape.fill}
-          strokeWidth={sel ? 3 : 2}
-          onPointerDown={drag}
-          style={{ cursor: "move" }}
-        />
-        <polygon
-          points={`${x2},${y2} ${p1x},${p1y} ${p2x},${p2y}`}
-          fill={shape.fill}
-          onPointerDown={drag}
-          style={{ cursor: "move" }}
-        />
-        {sel && (
-          <>
-            <circle
-              cx={shape.x}
-              cy={shape.y}
-              r="5"
-              fill="#06b6d4"
-              stroke="white"
-              strokeWidth="2"
-            />
-            <circle
-              cx={x2}
-              cy={y2}
-              r="5"
-              fill="#06b6d4"
-              stroke="white"
-              strokeWidth="2"
-              onPointerDown={dragEnd}
-              style={{ cursor: "grab" }}
-            />
-          </>
-        )}
-      </g>
-    );
-  }
+    return `${x2},${y2} ${p1x},${p1y} ${p2x},${p2y}`;
+  }, [shape.x, shape.y, x2, y2, isArrow]);
 
   return (
-    <g>
+    <g opacity={shape.opacity ?? 1}>
       <line
         x1={shape.x}
         y1={shape.y}
         x2={x2}
         y2={y2}
-        stroke={shape.fill}
-        strokeWidth={sel ? 3 : 2}
+        stroke={strokeColor}
+        strokeWidth={shape.strokeWidth ?? 2}
+        strokeDasharray={getStrokeDasharray(shape.strokeStyle)}
         onPointerDown={drag}
         style={{ cursor: "move" }}
       />
-      {sel && (
+      {isArrow && (
+        <polygon
+          points={arrowHead}
+          fill={strokeColor}
+          onPointerDown={drag}
+          style={{ cursor: "move" }}
+        />
+      )}
+      {isSelected && (
         <>
+          <line
+            x1={shape.x}
+            y1={shape.y}
+            x2={x2}
+            y2={y2}
+            stroke="#06b6d4"
+            strokeWidth={5 / camera.zoom}
+            strokeDasharray="3, 6"
+            pointerEvents="none"
+          />
           <circle
             cx={shape.x}
             cy={shape.y}
-            r="5"
+            r={6 / camera.zoom}
             fill="#06b6d4"
             stroke="white"
-            strokeWidth="2"
+            strokeWidth={2 / camera.zoom}
+            style={{ cursor: "move" }}
+            onPointerDown={drag}
           />
           <circle
             cx={x2}
             cy={y2}
-            r="5"
+            r={6 / camera.zoom}
             fill="#06b6d4"
             stroke="white"
-            strokeWidth="2"
+            strokeWidth={2 / camera.zoom}
             onPointerDown={dragEnd}
             style={{ cursor: "grab" }}
           />
@@ -474,26 +652,35 @@ const ArrowLine = ({ id, shape, sel, onStart, zoom, isArrow }) => {
 };
 
 // TextBox
-const TextBox = ({ id, shape, sel, onStart, zoom }) => {
-  const drag = useDrag(id, shape, onStart, zoom);
+const TextBox = ({ id, shape, isSelected, onSelect, camera }) => {
+  const drag = useDrag(id, shape, () =>
+    onSelect(id, new MouseEvent("pointerdown"))
+  );
   const updateText = useMutation(
     ({ storage }, txt) => {
-      const s = storage.get("shapes").get(id);
-      if (s) s.set("text", txt);
+      storage.get("shapes").get(id)?.set("text", txt);
     },
     [id]
   );
 
+  const handlePointerDown = (e) => {
+    onSelect(id, e);
+    if (!e.target.closest("textarea")) {
+      drag(e, camera);
+    }
+  };
+
   return (
-    <g onPointerDown={drag}>
+    <g onPointerDown={handlePointerDown} opacity={shape.opacity ?? 1}>
       <rect
         x={shape.x}
         y={shape.y}
         width={shape.width}
         height={shape.height}
-        fill={shape.fill}
-        stroke={sel ? "#06b6d4" : "rgba(255,255,255,0.2)"}
-        strokeWidth={sel ? 3 : 1}
+        fill={shape.fill ?? "transparent"}
+        stroke={shape.stroke ?? "#ffffff"}
+        strokeWidth={shape.strokeWidth ?? 1}
+        strokeDasharray={getStrokeDasharray(shape.strokeStyle)}
         rx="4"
         style={{ cursor: "move" }}
       />
@@ -504,7 +691,7 @@ const TextBox = ({ id, shape, sel, onStart, zoom }) => {
         height={shape.height - 8}
       >
         <div style={{ width: "100%", height: "100%" }}>
-          {sel ? (
+          {isSelected ? (
             <textarea
               autoFocus
               value={shape.text || ""}
@@ -515,10 +702,11 @@ const TextBox = ({ id, shape, sel, onStart, zoom }) => {
                 width: "100%",
                 height: "100%",
                 padding: "4px",
-                backgroundColor: shape.fill,
+                backgroundColor: "transparent",
                 color: shape.textColor || "#fff",
                 border: "none",
-                fontSize: "14px",
+                fontSize: `${14}px`, // Font size no longer scales with zoom
+                lineHeight: 1.2,
                 resize: "none",
                 outline: "none",
               }}
@@ -528,9 +716,11 @@ const TextBox = ({ id, shape, sel, onStart, zoom }) => {
               style={{
                 padding: "4px",
                 color: shape.textColor || "#fff",
-                fontSize: "14px",
+                fontSize: `${14}px`, // Font size no longer scales with zoom
+                lineHeight: 1.2,
                 wordWrap: "break-word",
                 overflow: "hidden",
+                whiteSpace: "pre-wrap",
               }}
             >
               {shape.text || "Click to edit"}
@@ -538,6 +728,19 @@ const TextBox = ({ id, shape, sel, onStart, zoom }) => {
           )}
         </div>
       </foreignObject>
+      {isSelected && (
+        <rect
+          x={shape.x}
+          y={shape.y}
+          width={shape.width}
+          height={shape.height}
+          fill="transparent"
+          stroke="#06b6d4"
+          strokeWidth={3 / camera.zoom}
+          pointerEvents="none"
+          rx="4"
+        />
+      )}
     </g>
   );
 };
@@ -600,17 +803,132 @@ const Icon = ({ icon }) => (
   </svg>
 );
 
+// Add this new component to your file
+const StylingPanel = ({ selectedIds, shapes, updateShapeStyle }) => {
+  if (selectedIds.size === 0) return null;
+
+  // For simplicity, we'll just grab the style of the first selected shape.
+  // A more advanced version could handle mixed styles.
+  const firstShapeId = Array.from(selectedIds)[0];
+  const firstShape = shapes.get(firstShapeId);
+
+  if (!firstShape) return null;
+
+  const handleStyleChange = (property, value) => {
+    updateShapeStyle({ [property]: value });
+  };
+
+  return (
+    <div className="absolute top-20 left-4 bg-slate-800 p-3 rounded-lg shadow-lg text-white text-xs space-y-3">
+      <div className="flex items-center gap-2">
+        <label className="w-20">Stroke Color</label>
+        <input
+          type="color"
+          value={firstShape.stroke || "#000000"}
+          onChange={(e) => handleStyleChange("stroke", e.target.value)}
+          className="w-8 h-8 p-0 border-none bg-transparent"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="w-20">Stroke Width</label>
+        <input
+          type="range"
+          min="0"
+          max="20"
+          value={firstShape.strokeWidth ?? 2}
+          onChange={(e) =>
+            handleStyleChange("strokeWidth", parseInt(e.target.value, 10))
+          }
+          className="flex-1"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="w-20">Stroke Style</label>
+        <select
+          value={firstShape.strokeStyle || "solid"}
+          onChange={(e) => handleStyleChange("strokeStyle", e.target.value)}
+          className="bg-slate-700 p-1 rounded w-full"
+        >
+          <option value="solid">Solid</option>
+          <option value="dashed">Dashed</option>
+          <option value="dotted">Dotted</option>
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="w-20">Opacity</label>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={(firstShape.opacity ?? 1) * 100}
+          onChange={(e) =>
+            handleStyleChange("opacity", parseInt(e.target.value, 10) / 100)
+          }
+          className="flex-1"
+        />
+      </div>
+    </div>
+  );
+};
+
 // Main Canvas
 function Canvas() {
-  const [presence, updatePresence] = useMyPresence();
+  const [, updatePresence] = useMyPresence();
   const others = useOthers();
-  const [sel, setSel] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [tool, setTool] = useState("select");
-  const [zoom, setZoom] = useState(1);
   const [color, setColor] = useState(COLORS[0]);
   const [showHelp, setShowHelp] = useState(false);
+  const [selectionNet, setSelectionNet] = useState(null);
   const shapes = useStorage((root) => root.shapes);
+  const camera = useStorage((root) => root.camera);
   const svgRef = useRef(null);
+  const cameraRef = useRef(camera); // 👈 ADD THIS LINE
+  const containerRef = useRef(null);
+  const isPanningRef = useRef(false);
+  const selectionNetRef = useRef(null);
+
+  const { undo, redo, canUndo, canRedo } = useHistory();
+
+  // Sync ref with the latest camera state from storage
+  useEffect(() => {
+    // 👈 ADD THIS ENTIRE useEffect BLOCK
+    cameraRef.current = camera;
+  }, [camera]);
+
+  useEffect(() => {
+    // In a real app, you'd fetch the user's name from your auth context.
+    updatePresence({
+      info: { name: "User " + Math.floor(Math.random() * 100) },
+    });
+  }, [updatePresence]);
+
+  // Update ref when state changes
+  useEffect(() => {
+    selectionNetRef.current = selectionNet;
+  }, [selectionNet]);
+
+  const updateCamera = useMutation(({ storage }, updates) => {
+    const cam = storage.get("camera");
+    Object.entries(updates).forEach(([key, value]) => {
+      cam.set(key, value);
+    });
+  }, []);
+
+  // In the Canvas component
+  const updateShapeStyle = useMutation(
+    ({ storage }, updates) => {
+      selectedIds.forEach((id) => {
+        const shape = storage.get("shapes").get(id);
+        if (shape) {
+          for (const [key, value] of Object.entries(updates)) {
+            shape.set(key, value);
+          }
+        }
+      });
+    },
+    [selectedIds]
+  );
 
   const insert = useMutation(({ storage }, type, x, y, c) => {
     const cfg = SHAPE_CONFIGS[type](x, y, type === "textBox" ? null : c);
@@ -624,8 +942,12 @@ function Canvas() {
   }, []);
 
   const clear = useMutation(({ storage }) => {
-    const s = storage.get("shapes");
-    Array.from(s.keys()).forEach((id) => s.delete(id));
+    const shapes = storage.get("shapes");
+    const idsToDelete = [];
+    for (const [key] of shapes.entries()) {
+      idsToDelete.push(key);
+    }
+    idsToDelete.forEach((id) => shapes.delete(id));
   }, []);
 
   const duplicate = useMutation(({ storage }, id) => {
@@ -637,412 +959,565 @@ function Canvas() {
     return newId;
   }, []);
 
-  const handleMove = useCallback(
-    (e) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / zoom;
-      const y = (e.clientY - rect.top) / zoom;
-      updatePresence({ cursor: { x, y } });
-    },
-    [updatePresence, zoom]
-  );
-
-  const handleClick = useCallback(
-    (e) => {
-      if (tool === "select") return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / zoom;
-      const y = (e.clientY - rect.top) / zoom;
-      const id = insert(tool, x, y, color);
-      setSel(id);
-      setTool("select");
-    },
-    [tool, insert, zoom, color]
-  );
-
-  const handleKey = useCallback(
-    (e) => {
-      if (e.key === "Delete" && sel) {
-        deleteShape(sel);
-        setSel(null);
-      }
-      if (e.key === "Escape") {
-        setSel(null);
-        setTool("select");
-      }
-      if (e.ctrlKey && e.key === "d" && sel) {
-        e.preventDefault();
-        const newId = duplicate(sel);
-        if (newId) setSel(newId);
-      }
-      const toolKey = {
-        r: "rectangle",
-        c: "circle",
-        d: "diamond",
-        e: "ellipse",
-        a: "arrow",
-        l: "line",
-        t: "textBox",
-      }[e.key.toLowerCase()];
-      if (toolKey) setTool(toolKey);
-      if (e.key === "v" || e.key === "V") setTool("select");
-    },
-    [sel, deleteShape, duplicate]
-  );
-
-  useEffect(() => {
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [handleKey]);
-
-  const handleWheel = useCallback((e) => {
-    // require Ctrl (Windows) or Meta (Mac) for zoom (or pinch gestures that set ctrl/meta)
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
-
-    const svg = svgRef.current;
-    const rect = svg?.getBoundingClientRect();
-
-    // keep zoom focus at pointer by adjusting transform-origin to pointer pixel coords
-    if (svg && rect) {
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-      svg.style.transformOrigin = `${px}px ${py}px`;
-    }
-
-    // normalize delta across devices (pixels / lines / pages)
-    const DOM_DELTA_PIXEL = 0;
-    const DOM_DELTA_LINE = 1;
-    const DOM_DELTA_PAGE = 2;
-    let normDelta = e.deltaY;
-    if (e.deltaMode === DOM_DELTA_LINE) normDelta = e.deltaY * 16;
-    if (e.deltaMode === DOM_DELTA_PAGE)
-      normDelta = e.deltaY * window.innerHeight;
-
-    // multiplicative scale step (smooth, device independent)
-    const SCALE_SENSITIVITY = 0.0015;
-    const scaleFactor = Math.exp(-normDelta * SCALE_SENSITIVITY);
-
-    setZoom((z) => {
-      const next = Math.min(Math.max(ZOOM_MIN, z * scaleFactor), ZOOM_MAX);
-      return next;
-    });
-  }, []);
-
-  const exportImg = useCallback(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const clone = svg.cloneNode(true);
-    clone.setAttribute("width", svg.clientWidth);
-    clone.setAttribute("height", svg.clientHeight);
-    const data = new XMLSerializer().serializeToString(clone);
-    const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`;
-    const canvas = document.createElement("canvas");
-    canvas.width = svg.clientWidth;
-    canvas.height = svg.clientHeight;
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-    img.onload = () => {
-      ctx.fillStyle = "#0f172a";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = `whiteboard-${Date.now()}.png`;
-      a.click();
-    };
-    img.src = url;
-  }, []);
-
   const shapeArr = useMemo(() => {
     if (!shapes) return [];
-    // If shapes exposes keys() and get() (LiveMap)
     if (typeof shapes.keys === "function" && typeof shapes.get === "function") {
       return Array.from(shapes.keys()).map((id) => [id, shapes.get(id)]);
     }
-    // If shapes exposes entries() (Map-like)
     if (typeof shapes.entries === "function") {
       return Array.from(shapes.entries());
     }
-    // Fallback for plain objects
     return Object.entries(shapes);
   }, [shapes]);
 
-  return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Toolbar */}
-      <div className="bg-slate-800/95 backdrop-blur border-b border-slate-700 px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1 flex-wrap">
-            <button
-              onClick={() => setTool("select")}
-              className={`p-2 rounded transition ${
-                tool === "select"
-                  ? "bg-cyan-500 text-white"
-                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-              }`}
-              title="Select (V)"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
-                />
-              </svg>
-            </button>
-            <div className="w-px h-6 bg-slate-600" />
-            {TOOLS.map(({ id, icon, title }) => (
-              <button
-                key={id}
-                onClick={() => setTool(id)}
-                className={`p-2 rounded transition ${
-                  tool === id
-                    ? "bg-cyan-500 text-white"
-                    : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                }`}
-                title={title}
-              >
-                <Icon icon={icon} />
-              </button>
-            ))}
-            <div className="w-px h-6 bg-slate-600" />
-            <div className="flex gap-1">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={`w-6 h-6 rounded border-2 ${
-                    color === c ? "border-white" : "border-transparent"
-                  }`}
-                  style={{ backgroundColor: c }}
-                  title="Color"
-                />
-              ))}
-            </div>
-            <div className="w-px h-6 bg-slate-600" />
-            <button
-              onClick={() => {
-                if (confirm("Clear all shapes?")) {
-                  clear();
-                  setSel(null);
-                }
-              }}
-              className="p-2 rounded bg-slate-700 text-slate-300 hover:bg-slate-600"
-              title="Clear All"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-            <button
-              onClick={exportImg}
-              className="px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 flex items-center gap-1 text-sm font-medium"
-              title="Export"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                />
-              </svg>
-              Export
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowHelp(!showHelp)}
-              className="p-2 rounded bg-slate-700 text-slate-300 hover:bg-slate-600"
-              title="Help"
-            >
-              Instructions
-            </button>
-            <div className="flex -space-x-2">
-              <div
-                className="w-8 h-8 rounded-full border-2 border-slate-800 flex items-center justify-center text-white text-xs font-semibold"
-                style={{ backgroundColor: "#06b6d4" }}
-              >
-                You
-              </div>
-              {others.map(({ connectionId }) => (
-                <div
-                  key={connectionId}
-                  className="w-8 h-8 rounded-full border-2 border-slate-800"
-                  style={{ backgroundColor: getUserColor(connectionId) }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+  const handleMove = useCallback(
+    (e) => {
+      if (!camera || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const canvasPos = screenToCanvas(screenX, screenY, camera);
+      updatePresence({ cursor: canvasPos });
+    },
+    [updatePresence, camera]
+  );
 
-      {/* Canvas */}
-      <div
-        className="flex-1 relative overflow-hidden"
-        style={{ cursor: tool === "select" ? "default" : "crosshair" }}
-        onWheel={handleWheel}
-      >
-        <svg
-          ref={svgRef}
-          className="w-full h-full"
-          onPointerMove={handleMove}
-          onPointerLeave={() => {
-            updatePresence({ cursor: null });
-            // reset transform origin back to top-left when pointer leaves (optional)
-            if (svgRef.current) svgRef.current.style.transformOrigin = "0 0";
-          }}
-          onClick={handleClick}
-          onWheel={handleWheel}
-          style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+  const handlePanStart = useCallback(
+    (e) => {
+      if (e.button !== 1 && !(e.button === 0 && e.spaceKey)) return;
+      e.preventDefault();
+      isPanningRef.current = true;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startCamX = camera.x;
+      const startCamY = camera.y;
+
+      const move = (me) => {
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
+        updateCamera({ x: startCamX + dx, y: startCamY + dy });
+      };
+      const up = () => {
+        isPanningRef.current = false;
+        document.removeEventListener("pointermove", move);
+        document.removeEventListener("pointerup", up);
+      };
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", up);
+    },
+    [camera, updateCamera]
+  );
+
+  const onShapePointerDown = useCallback((id, e) => {
+    e.stopPropagation();
+
+    if (e.shiftKey) {
+      setSelectedIds((prev) => {
+        const newSelection = new Set(prev);
+        if (newSelection.has(id)) {
+          newSelection.delete(id);
+        } else {
+          newSelection.add(id);
+        }
+        return newSelection;
+      });
+    } else {
+      setSelectedIds(new Set([id]));
+    }
+  }, []);
+
+  // SIMPLER FIX: Handle all clicks and check if they're on shapes
+  const handleCanvasClick = useCallback(
+    (e) => {
+      // If we're in select mode and the click wasn't on a shape, deselect
+      if (tool === "select") {
+        // Check if click was on any shape element
+        const clickedOnShape = e.target.closest(
+          "rect, circle, ellipse, polygon, line, text, foreignObject"
+        );
+
+        if (!clickedOnShape) {
+          setSelectedIds(new Set());
+        }
+      }
+
+      // Only create new shapes if we're not in select mode
+      if (tool !== "select" && camera && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        const canvasPos = screenToCanvas(screenX, screenY, camera);
+        const id = insert(tool, canvasPos.x, canvasPos.y, color);
+        setSelectedIds(new Set([id]));
+        setTool("select");
+      }
+    },
+    [tool, insert, color, camera]
+  );
+
+  
+
+  // In the Canvas component
+  const resetCamera = useCallback(() => {
+    updateCamera({ x: 0, y: 0, zoom: 1 });
+  }, [updateCamera]);
+
+  const handleSelectionNetStart = useCallback(
+    (e) => {
+      if (e.button !== 0 || tool !== "select") return;
+      if (!camera || !containerRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const point = screenToCanvas(screenX, screenY, camera);
+
+      setSelectionNet({ x: point.x, y: point.y, width: 0, height: 0 });
+
+      const move = (me) => {
+        const currentScreenX = me.clientX - rect.left;
+        const currentScreenY = me.clientY - rect.top;
+        const currentPoint = screenToCanvas(
+          currentScreenX,
+          currentScreenY,
+          camera
+        );
+
+        setSelectionNet({
+          x: Math.min(point.x, currentPoint.x),
+          y: Math.min(point.y, currentPoint.y),
+          width: Math.abs(point.x - currentPoint.x),
+          height: Math.abs(point.y - currentPoint.y),
+        });
+      };
+
+      const up = () => {
+        document.removeEventListener("pointermove", move);
+        document.removeEventListener("pointerup", up);
+
+        const net = selectionNetRef.current;
+        if (net && (net.width > 5 || net.height > 5)) {
+          const newSelectedIds = new Set();
+          for (const [id, shape] of shapeArr) {
+            const bounds = getShapeBounds(shape);
+            if (
+              bounds.x < net.x + net.width &&
+              bounds.x + bounds.width > net.x &&
+              bounds.y < net.y + net.height &&
+              bounds.y + bounds.height > net.y
+            ) {
+              newSelectedIds.add(id);
+            }
+          }
+          setSelectedIds(newSelectedIds);
+        }
+        setSelectionNet(null);
+      };
+
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", up);
+    },
+    [tool, camera, shapeArr]
+  );
+
+  // Replace the entire useEffect for wheel handling with this:
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !camera) return;
+
+    const onWheel = (e) => {
+      // Only handle zoom when Ctrl key is pressed or for trackpad pinch gestures
+      if (!e.ctrlKey && Math.abs(e.deltaY) < 100) return;
+
+      e.preventDefault();
+
+      const rect = el.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+
+      // Calculate the point under cursor in canvas coordinates BEFORE zoom
+      const canvasBeforeZoom = screenToCanvas(screenX, screenY, camera);
+
+      // Calculate new zoom level
+      const delta = -e.deltaY;
+      const zoomFactor = Math.exp(delta * ZOOM_SENSITIVITY);
+      const newZoom = Math.min(
+        Math.max(camera.zoom * zoomFactor, ZOOM_MIN),
+        ZOOM_MAX
+      );
+
+      // Calculate the same point under cursor in canvas coordinates AFTER zoom
+      const canvasAfterZoom = screenToCanvas(screenX, screenY, {
+        ...camera,
+        zoom: newZoom,
+      });
+
+      // Calculate how much we need to adjust the camera to keep the point under cursor fixed
+      const dx = (canvasAfterZoom.x - canvasBeforeZoom.x) * newZoom;
+      const dy = (canvasAfterZoom.y - canvasBeforeZoom.y) * newZoom;
+
+      updateCamera({
+        zoom: newZoom,
+        x: camera.x + dx,
+        y: camera.y + dy,
+      });
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [camera, updateCamera]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.target.tagName === "TEXTAREA") return;
+
+      switch (e.key) {
+        case "Backspace":
+        case "Delete":
+          selectedIds.forEach(deleteShape);
+          setSelectedIds(new Set());
+          break;
+        case "z":
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            undo();
+          }
+          break;
+        case "y":
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            redo();
+          }
+          break;
+        case "d":
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            const newIds = new Set();
+            selectedIds.forEach((id) => {
+              const newId = duplicate(id);
+              if (newId) newIds.add(newId);
+            });
+            setSelectedIds(newIds);
+          } else {
+            setTool("diamond");
+          }
+          break;
+        case "r":
+          setTool("rectangle");
+          break;
+        case "c":
+          setTool("circle");
+          break;
+        case "e":
+          setTool("ellipse");
+          break;
+        case "a":
+          setTool("arrow");
+          break;
+        case "l":
+          setTool("line");
+          break;
+        case "t":
+          setTool("textBox");
+          break;
+        case "s":
+          setTool("select");
+          break;
+        case "Escape":
+          setSelectedIds(new Set());
+          setTool("select");
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedIds, deleteShape, undo, redo, duplicate]);
+
+  if (!camera) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-slate-950">
+        <p className="text-slate-400">Loading whiteboard...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative w-full h-full bg-slate-950 overflow-hidden"
+      onPointerMove={handleMove}
+      onPointerDown={(e) => {
+        handlePanStart(e);
+        handleSelectionNetStart(e);
+      }}
+      onClick={handleCanvasClick}
+      style={{
+        cursor:
+          tool === "select"
+            ? isPanningRef.current
+              ? "grabbing"
+              : "default"
+            : "crosshair",
+      }}
+    >
+      <svg ref={svgRef} className="w-full h-full">
+        <defs>
+          <pattern
+            id="grid"
+            width={GRID_SIZE}
+            height={GRID_SIZE}
+            patternUnits="userSpaceOnUse"
+            patternTransform={`translate(${camera.x % GRID_SIZE}, ${
+              camera.y % GRID_SIZE
+            }) scale(${camera.zoom})`}
+          >
+            <path
+              d={`M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}`}
+              fill="none"
+              stroke="rgba(203, 213, 225, 0.1)"
+              strokeWidth="1"
+            />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)" />
+        <g
+          transform={`translate(${camera.x}, ${camera.y}) scale(${camera.zoom})`}
         >
-          <defs>
-            <pattern
-              id="grid"
-              width={GRID_SIZE}
-              height={GRID_SIZE}
-              patternUnits="userSpaceOnUse"
-            >
-              <path
-                d={`M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}`}
-                fill="none"
-                stroke="rgba(148,163,184,0.1)"
-                strokeWidth="1"
-              />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
           {shapeArr.map(([id, shape]) => {
-            const Comp = ShapeMap[shape.type];
-            return Comp ? (
-              <Comp
+            const Component = ShapeMap[shape.type];
+            if (!Component) return null;
+            return (
+              <Component
                 key={id}
                 id={id}
                 shape={shape}
-                sel={id === sel}
-                onStart={() => setSel(id)}
-                zoom={zoom}
+                isSelected={selectedIds.has(id)}
+                onSelect={onShapePointerDown}
+                camera={camera}
               />
-            ) : null;
+            );
           })}
+          {selectionNet && (
+            <rect
+              x={selectionNet.x}
+              y={selectionNet.y}
+              width={selectionNet.width}
+              height={selectionNet.height}
+              fill="rgba(6, 182, 212, 0.2)"
+              stroke="rgba(6, 182, 212, 0.8)"
+              strokeWidth={1 / camera.zoom}
+            />
+          )}
           {others.map(({ connectionId, presence }) =>
-            presence?.cursor ? (
+            presence.cursor ? (
               <Cursor
                 key={connectionId}
-                {...presence.cursor}
+                x={presence.cursor.x}
+                y={presence.cursor.y}
                 color={getUserColor(connectionId)}
-                name={`User ${connectionId}`}
+                name={presence.info?.name || "Anonymous"}
               />
             ) : null
           )}
-        </svg>
+        </g>
+      </svg>
 
-        {/* Help Panel */}
+      {/* UI Elements */}
+      <StylingPanel // 👈 ADD THIS
+        selectedIds={selectedIds}
+        shapes={shapes}
+        updateShapeStyle={updateShapeStyle}
+      />
+
+      {/* UI Elements */}
+      <div className="absolute top-4 left-4 flex items-center gap-2 bg-slate-800 p-2 rounded-lg shadow-lg select-none">
+        <button
+          onClick={() => setTool("select")}
+          className={`p-2 rounded-md ${
+            tool === "select" ? "bg-cyan-500 text-white" : "hover:bg-slate-700"
+          }`}
+          title="Select (S)"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M13.64,21.97C13.14,22.21 12.54,22 12.31,21.5L10.13,16.76L7.62,18.78C7.45,18.92 7.24,19 7,19A1,1 0 0,1 6,18V3A1,1 0 0,1 7,2C7.24,2 7.45,2.08 7.62,2.22L16.39,8.78C16.86,9.16 16.95,9.82 16.57,10.29L13.96,13.58L18.69,15.75C19.19,16 19.41,16.59 19.18,17.09L13.64,21.97Z"
+            />
+          </svg>
+        </button>
+        {TOOLS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTool(t.id)}
+            className={`p-2 rounded-md ${
+              tool === t.id ? "bg-cyan-500 text-white" : "hover:bg-slate-700"
+            }`}
+            title={t.title}
+          >
+            <Icon icon={t.icon} />
+          </button>
+        ))}
+      </div>
+
+      <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-800 p-2 rounded-lg shadow-lg">
+        {COLORS.map((c) => (
+          <button
+            key={c}
+            onClick={() => setColor(c)}
+            className={`w-6 h-6 rounded-full ${
+              color === c
+                ? "ring-2 ring-offset-2 ring-offset-slate-800 ring-white"
+                : ""
+            }`}
+            style={{ backgroundColor: c }}
+          />
+        ))}
+      </div>
+
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-slate-800 p-2 rounded-lg shadow-lg">
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          className="p-2 rounded-md hover:bg-slate-700 disabled:opacity-50"
+          title="Undo (Ctrl+Z)"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 20.1,16L22.47,15.22C21.08,11.03 17.15,8 12.5,8Z"
+            />
+          </svg>
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          className="p-2 rounded-md hover:bg-slate-700 disabled:opacity-50"
+          title="Redo (Ctrl+Y)"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M18.4,10.6C16.55,9 14.15,8 11.5,8C6.85,8 2.92,11.03 1.53,15.22L3.9,16C4.95,12.81 7.96,10.5 11.5,10.5C13.46,10.5 15.23,11.22 16.62,12.38L13,16H22V7L18.4,10.6Z"
+            />
+          </svg>
+        </button>
+        <button
+          onClick={clear}
+          className="p-2 rounded-md hover:bg-red-500"
+          title="Clear All"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
+            />
+          </svg>
+        </button>
+        {/* 👇 ADD THIS BUTTON 👇 */}
+        <button
+          onClick={resetCamera}
+          className="p-2 rounded-md hover:bg-slate-700"
+          title="Reset View"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M12 6.5c-2.49 0-4.5 2.01-4.5 4.5s2.01 4.5 4.5 4.5c.88 0 1.7-.26 2.39-.7L20 20l-1.42-1.42-5.21-5.21c.44-.69.7-1.51.7-2.39C14.07 8.74 12.06 6.5 10 6.5zm0 7c-1.38 0-2.5-1.12-2.5-2.5S10.62 8.5 12 8.5s2.5 1.12 2.5 2.5S13.38 13.5 12 13.5zM4 4h4v2H4v4H2V4h2zm16 0h-4v2h4v4h2V4h-2zM4 20h4v-2H4v-4H2v6h2zM20 20h-4v-2h4v-4h2v6h-2z"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div className="absolute bottom-4 right-4">
+        <button
+          onClick={() => setShowHelp((s) => !s)}
+          className="p-2 rounded-full bg-slate-800 hover:bg-cyan-500"
+          title="Help"
+        >
+          ?
+        </button>
         {showHelp && (
-          <div className="absolute top-4 left-4 bg-slate-800/95 backdrop-blur rounded-lg p-4 text-sm text-slate-300 border border-slate-700 max-w-sm">
-            <div className="font-semibold text-cyan-400 mb-2">
-              Keyboard Shortcuts:
-            </div>
-            <ul className="space-y-1 text-xs">
+          <div className="absolute bottom-12 right-0 w-64 bg-slate-800 p-4 rounded-lg shadow-lg text-sm">
+            <h3 className="font-bold mb-2">Shortcuts</h3>
+            <ul className="space-y-1">
               <li>
-                • <kbd className="bg-slate-700 px-1 rounded">V</kbd> Select tool
+                <span className="font-mono bg-slate-700 px-1 rounded">
+                  Delete/Backspace
+                </span>
+                : Delete selected
               </li>
               <li>
-                • <kbd className="bg-slate-700 px-1 rounded">R/C/D/E/A/L/T</kbd>{" "}
-                Shape tools
+                <span className="font-mono bg-slate-700 px-1 rounded">
+                  Ctrl/Cmd + Z
+                </span>
+                : Undo
               </li>
               <li>
-                • <kbd className="bg-slate-700 px-1 rounded">Delete</kbd> Remove
-                selected
+                <span className="font-mono bg-slate-700 px-1 rounded">
+                  Ctrl/Cmd + Y
+                </span>
+                : Redo
               </li>
               <li>
-                • <kbd className="bg-slate-700 px-1 rounded">Ctrl+D</kbd>{" "}
-                Duplicate
+                <span className="font-mono bg-slate-700 px-1 rounded">
+                  Ctrl/Cmd + D
+                </span>
+                : Duplicate
               </li>
               <li>
-                • <kbd className="bg-slate-700 px-1 rounded">Esc</kbd> Deselect
+                <span className="font-mono bg-slate-700 px-1 rounded">
+                  R, C, D, E, A, L, T
+                </span>
+                : Select tool
               </li>
               <li>
-                • <kbd className="bg-slate-700 px-1 rounded">Ctrl+Scroll</kbd>{" "}
-                Zoom
+                <span className="font-mono bg-slate-700 px-1 rounded">S</span>:
+                Select tool
+              </li>
+              <li>
+                <span className="font-mono bg-slate-700 px-1 rounded">
+                  Mouse Wheel
+                </span>
+                : Zoom
+              </li>
+              <li>
+                <span className="font-mono bg-slate-700 px-1 rounded">
+                  Middle Click
+                </span>
+                : Pan
               </li>
             </ul>
           </div>
         )}
-
-        {/* Stats */}
-        <div className="absolute bottom-4 right-4 bg-slate-800/95 backdrop-blur rounded-lg p-3 text-sm text-slate-300 border border-slate-700">
-          <div className="text-xs space-y-1">
-            <div>
-              Shapes:{" "}
-              <span className="text-cyan-400 font-semibold">
-                {shapeArr.length}
-              </span>
-            </div>
-            <div>
-              Users:{" "}
-              <span className="text-cyan-400 font-semibold">
-                {others.length + 1}
-              </span>
-            </div>
-            <div>
-              Zoom:{" "}
-              <span className="text-cyan-400 font-semibold">
-                {Math.round(zoom * 100)}%
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
-// Main Page
-export default function WhiteboardPage() {
+function WhiteboardPage() {
   const { workspaceSlug } = useParams();
 
   return (
     <RoomProvider
-      id={`whiteboard:${workspaceSlug || "default"}`}
-      initialPresence={{ cursor: null }}
-      // shapes must be a LiveMap so we can call .keys(), .get(), .set()
-      initialStorage={{ shapes: new LiveMap() }}
+      id={workspaceSlug}
+      initialPresence={{ cursor: null, info: {} }}
+      initialStorage={{
+        shapes: new LiveMap(),
+        camera: new LiveObject({ x: 0, y: 0, zoom: 1 }),
+      }}
     >
       <ClientSideSuspense
         fallback={
-          <div className="h-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-            <div className="text-center">
-              <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4" />
-              <p className="text-slate-300 text-lg">Loading whiteboard...</p>
-            </div>
+          <div className="w-full h-full flex items-center justify-center bg-slate-950">
+            <p className="text-slate-400">Loading Whiteboard...</p>
           </div>
         }
       >
-        <Canvas />
+        {() => <Canvas />}
       </ClientSideSuspense>
     </RoomProvider>
   );
 }
+
+export default WhiteboardPage;

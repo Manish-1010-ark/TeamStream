@@ -7,4 +7,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   // Only Vite plugins go in this array
   plugins: [tailwindcss(), react()],
+  server: {
+    port: 5173,   // Change this to your desired port
+    strictPort: true, // Fail if port is already in use
+  },
 });
