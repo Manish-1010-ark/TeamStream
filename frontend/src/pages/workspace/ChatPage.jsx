@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import io from "socket.io-client";
 import axios from "axios";
+import InlineCallBanner from "../../components/InlineCallBanner";
 
 function ChatPage() {
   const { workspaceSlug } = useParams();
@@ -84,6 +85,7 @@ function ChatPage() {
         <div className="absolute top-20 right-20 w-96 h-96 bg-cyan-500 rounded-full blur-3xl"></div>
         <div className="absolute bottom-20 left-20 w-96 h-96 bg-blue-500 rounded-full blur-3xl"></div>
       </div>
+
       {/* Header */}
       <header className="relative p-6 border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30 flex-shrink-0 z-10 overflow-hidden">
         <div className="flex items-center gap-3 mb-1">
@@ -99,9 +101,13 @@ function ChatPage() {
           </p>
         </div>
       </header>
+
       {/* Messages Area */}
       <div className="flex-1 relative overflow-hidden min-h-0">
         <div className="absolute inset-0 overflow-auto custom-scrollbar p-6 space-y-4">
+          {/* Call Banner - Shows prominently when call is active */}
+          <InlineCallBanner />
+
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center opacity-50">
               <svg
@@ -202,6 +208,7 @@ function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
       </div>
+
       {/* Message Input */}
       <footer className="relative p-6 border-t border-slate-800/50 backdrop-blur-sm bg-slate-900/30 flex-shrink-0 z-10">
         <form onSubmit={handleSendMessage} className="flex gap-3">
@@ -237,8 +244,9 @@ function ChatPage() {
           </button>
         </form>
       </footer>
+
       <style>{`
-              @keyframes fade-in {
+        @keyframes fade-in {
           from {
             opacity: 0;
           }
@@ -246,6 +254,7 @@ function ChatPage() {
             opacity: 1;
           }
         }
+        
         @keyframes message-in {
           from {
             opacity: 0;

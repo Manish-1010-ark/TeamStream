@@ -1,14 +1,29 @@
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-
-// DO NOT import the line-clamp plugin here
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
-  // Only Vite plugins go in this array
-  plugins: [tailwindcss(), react()],
+  plugins: [
+    tailwindcss(), 
+    react(),
+    nodePolyfills({
+      // Whether to polyfill `node:` protocol imports.
+      protocolImports: true,
+      // Whether to polyfill specific globals.
+      globals: {
+        Buffer: true,
+        global: true,
+        process: true,
+      },
+    }),
+  ],
   server: {
-    port: 5173,   // Change this to your desired port
-    strictPort: true, // Fail if port is already in use
+    port: 5173,
+    strictPort: true,
+  },
+  define: {
+    // Define global for browser compatibility
+    global: 'globalThis',
   },
 });

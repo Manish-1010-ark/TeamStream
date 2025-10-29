@@ -19,7 +19,8 @@
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "slugify": "^1.6.6",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

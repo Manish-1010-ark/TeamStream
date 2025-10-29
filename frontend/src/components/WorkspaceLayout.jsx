@@ -9,6 +9,7 @@ import IconWhiteboard from "./icons/IconWhiteboard";
 import IconVideo from "./icons/IconVideo";
 import ProfileDropdown from "./ProfileDropdown";
 import CopyButton from "./CopyButton";
+import CallNotificationIndicator from "./CallNotificationIndicator";
 
 function WorkspaceLayout() {
   const navigate = useNavigate();
@@ -20,7 +21,6 @@ function WorkspaceLayout() {
   const [loading, setLoading] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // For performance, wrap getAuthHeader in useCallback
   const getAuthHeader = useCallback(() => {
     const session = JSON.parse(localStorage.getItem("session"));
     if (!session || !session.access_token) {
@@ -30,20 +30,18 @@ function WorkspaceLayout() {
     return { Authorization: `Bearer ${session.access_token}` };
   }, [navigate]);
 
-  // The corrected useEffect hook
   useEffect(() => {
-    // 1. Check for a valid session at the very beginning.
     const session = JSON.parse(localStorage.getItem("session"));
     if (!session || !session.access_token) {
       navigate("/login");
-      return; // Stop the effect if not authenticated.
+      return;
     }
 
     const fetchWorkspaceData = async () => {
       setLoading(true);
       try {
         const headers = getAuthHeader();
-        if (!headers) return; // Stop if getAuthHeader initiated a redirect
+        if (!headers) return;
 
         const { data: currentWorkspace } = await axios.get(
           `http://localhost:3001/api/workspaces/${workspaceSlug}`,
@@ -63,12 +61,10 @@ function WorkspaceLayout() {
       } catch (error) {
         console.error("Failed to fetch workspace data", error);
 
-        // 2. Specifically handle 401 Unauthorized errors
         if (error.response && error.response.status === 401) {
-          localStorage.removeItem("session"); // Clear the invalid session
+          localStorage.removeItem("session");
           navigate("/login");
         } else {
-          // Handle other errors (like workspace not found)
           navigate("/dashboard");
         }
       } finally {
@@ -77,7 +73,6 @@ function WorkspaceLayout() {
     };
 
     fetchWorkspaceData();
-    // 3. Add navigate and getAuthHeader to the dependency array
   }, [workspaceSlug, navigate, getAuthHeader]);
 
   const handleLogout = () => {
@@ -250,8 +245,11 @@ function WorkspaceLayout() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 h-full overflow-hidden">
+      <main className="flex-1 h-full overflow-hidden relative">
         <Outlet />
+        
+        {/* Call Notification Indicator - Floats over content */}
+        <CallNotificationIndicator />
       </main>
     </div>
   );
