@@ -3,21 +3,29 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import io from "socket.io-client";
 
 /**
- * Custom hook to manage Socket.IO connection and video room signaling
- * Handles joining/leaving rooms and exchanging peer information
+ * Custom hook to manage Socket.IO connection and video call signaling
+ * Supports multi-call system with call IDs
  *
  * @param {string} workspaceSlug - Current workspace identifier
  * @param {string} userId - Current user's ID
  * @param {string} userName - Current user's display name
- * @returns {Object} Socket state, participants list, and control functions
+ * @param {string|null} callId - Specific call ID to join (null for lobby)
+ * @returns {Object} Socket state, participants, calls list, and control functions
  */
-function useSocketSignaling(workspaceSlug, userId, userName) {
+function useSocketSignaling(workspaceSlug, userId, userName, callId = null) {
   const [isConnected, setIsConnected] = useState(false);
   const [participants, setParticipants] = useState(new Map());
+  const [activeCalls, setActiveCalls] = useState([]);
   const socketRef = useRef(null);
 
-  // Store peer ID in ref so it persists across renders
+  // Store peer ID and callId in refs
   const localPeerIdRef = useRef(null);
+  const currentCallIdRef = useRef(callId);
+
+  // Update callId ref when it changes
+  useEffect(() => {
+    currentCallIdRef.current = callId;
+  }, [callId]);
 
   /**
    * Initialize Socket.IO connection
@@ -36,6 +44,12 @@ function useSocketSignaling(workspaceSlug, userId, userName) {
     socket.on("connect", () => {
       console.log("✅ [SOCKET] Connected:", socket.id);
       setIsConnected(true);
+
+      // Auto-join workspace room for lobby updates
+      if (workspaceSlug) {
+        socket.emit("join_workspace", workspaceSlug);
+        console.log(`📍 [SOCKET] Joined workspace room: ${workspaceSlug}`);
+      }
     });
 
     socket.on("disconnect", (reason) => {
@@ -55,26 +69,81 @@ function useSocketSignaling(workspaceSlug, userId, userName) {
         socket.disconnect();
       }
     };
-  }, []);
+  }, [workspaceSlug]);
 
   /**
-   * Join video room - FIXED: Accepts peer ID as parameter
+   * Create a new call
    */
-  const joinVideoRoom = useCallback(
-    (peerId) => {
-      console.log("📡 [JOIN ATTEMPT] Checking requirements...");
+  const createCall = useCallback(() => {
+    return new Promise((resolve, reject) => {
+      if (!socketRef.current || !isConnected) {
+        console.warn("⚠️ [CREATE CALL] Socket not connected");
+        reject(new Error("Not connected to server"));
+        return;
+      }
+
+      console.log("🎬 [CREATE CALL] Creating new call...");
+      console.log(`   Workspace: ${workspaceSlug}`);
+      console.log(`   User: ${userName} (${userId})`);
+
+      // Listen for call_created event once
+      const handleCallCreated = ({ callId }) => {
+        console.log(`✅ [CALL CREATED] Received callId: ${callId}`);
+        socketRef.current.off("call_created", handleCallCreated);
+        resolve(callId);
+      };
+
+      socketRef.current.once("call_created", handleCallCreated);
+
+      // Emit create_call event
+      socketRef.current.emit("create_call", {
+        workspaceSlug,
+        userId,
+        userName,
+      });
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        socketRef.current.off("call_created", handleCallCreated);
+        reject(new Error("Call creation timeout"));
+      }, 5000);
+    });
+  }, [workspaceSlug, userId, userName, isConnected]);
+
+  /**
+   * Get list of active calls in workspace
+   */
+  const getActiveCalls = useCallback(() => {
+    if (!socketRef.current || !isConnected) {
+      console.warn("⚠️ [GET CALLS] Socket not connected");
+      return;
+    }
+
+    console.log("📋 [GET CALLS] Requesting active calls for:", workspaceSlug);
+
+    socketRef.current.emit("get_active_calls", { workspaceSlug });
+  }, [workspaceSlug, isConnected]);
+
+  /**
+   * Join a specific call with peer ID
+   */
+  const joinCall = useCallback(
+    (targetCallId, peerId) => {
+      console.log("📡 [JOIN CALL] Checking requirements...");
       console.log(`   Socket ref: ${!!socketRef.current}`);
       console.log(`   Connected: ${isConnected}`);
+      console.log(`   Call ID: ${targetCallId || "null"}`);
       console.log(`   Peer ID: ${peerId || "null"}`);
       console.log(`   User ID: ${userId || "null"}`);
       console.log(`   User name: ${userName || "null"}`);
 
-      if (!socketRef.current || !isConnected || !peerId) {
+      if (!socketRef.current || !isConnected || !targetCallId || !peerId) {
         console.warn(
-          "⚠️ [JOIN BLOCKED] Cannot join video room: missing requirements",
+          "⚠️ [JOIN BLOCKED] Cannot join call: missing requirements",
           {
             hasSocket: !!socketRef.current,
             isConnected,
+            hasCallId: !!targetCallId,
             hasPeerId: !!peerId,
             hasUserId: !!userId,
             hasUserName: !!userName,
@@ -85,56 +154,74 @@ function useSocketSignaling(workspaceSlug, userId, userName) {
 
       // Store peer ID in ref
       localPeerIdRef.current = peerId;
+      currentCallIdRef.current = targetCallId;
 
-      console.log("📞 [JOIN] Joining video room:", workspaceSlug);
+      console.log("📞 [JOIN CALL] Joining call:", targetCallId);
       console.log(`   User: ${userName} (${userId})`);
       console.log(`   Peer ID: ${peerId}`);
 
-      socketRef.current.emit("join_video_room", {
+      socketRef.current.emit("join_call", {
+        callId: targetCallId,
         workspaceSlug,
         userId,
         userName,
-        peerId: peerId,
+        peerId,
       });
 
-      console.log("✅ [JOIN] Emitted join_video_room event");
+      console.log("✅ [JOIN CALL] Emitted join_call event");
     },
     [workspaceSlug, userId, userName, isConnected]
   );
 
   /**
-   * Leave video room
+   * Leave current call
    */
-  const leaveVideoRoom = useCallback(() => {
+  const leaveCall = useCallback((targetCallId) => {
     if (!socketRef.current) return;
 
-    console.log("👋 [LEAVE] Leaving video room:", workspaceSlug);
+    const callIdToLeave = targetCallId || currentCallIdRef.current;
 
-    socketRef.current.emit("leave_video_room", {
-      workspaceSlug,
+    if (!callIdToLeave) {
+      console.warn("⚠️ [LEAVE CALL] No call ID to leave");
+      return;
+    }
+
+    console.log("👋 [LEAVE CALL] Leaving call:", callIdToLeave);
+
+    socketRef.current.emit("leave_call", {
+      callId: callIdToLeave,
     });
 
-    // Clear participants
+    // Clear state
     setParticipants(new Map());
     localPeerIdRef.current = null;
-    console.log("✅ [LEAVE] Cleared participants list");
-  }, [workspaceSlug]);
+    currentCallIdRef.current = null;
+
+    console.log("✅ [LEAVE CALL] Left call and cleared state");
+  }, []);
 
   /**
-   * Share peer ID with room (for updates)
+   * Share peer ID with call
    */
   const sharePeerId = useCallback(
-    (peerId) => {
+    (peerId, targetCallId) => {
       if (!socketRef.current || !isConnected) return;
 
-      console.log("🆔 [SHARE] Sharing peer ID:", peerId);
+      const callIdForShare = targetCallId || currentCallIdRef.current;
+
+      if (!callIdForShare) {
+        console.warn("⚠️ [SHARE PEER] No call ID");
+        return;
+      }
+
+      console.log("🆔 [SHARE PEER] Sharing peer ID:", peerId);
 
       socketRef.current.emit("share_peer_id", {
-        workspaceSlug,
+        callId: callIdForShare,
         peerId,
       });
     },
-    [workspaceSlug, isConnected]
+    [isConnected]
   );
 
   /**
@@ -147,6 +234,70 @@ function useSocketSignaling(workspaceSlug, userId, userName) {
     console.log("👂 [LISTENERS] Setting up video signaling listeners...");
 
     /**
+     * Handle list of active calls in workspace
+     */
+    const handleActiveCallsList = ({ workspaceSlug: ws, calls }) => {
+      console.log(
+        `📋 [ACTIVE CALLS] Received ${calls.length} calls for workspace: ${ws}`
+      );
+      if (ws === workspaceSlug) {
+        setActiveCalls(calls);
+      }
+    };
+
+    /**
+     * Handle new call created
+     */
+    const handleCallCreated = ({ callId, creatorName, participantCount }) => {
+      console.log("🎬 [CALL CREATED] New call in workspace");
+      console.log(`   Call ID: ${callId}`);
+      console.log(`   Creator: ${creatorName}`);
+
+      // Update active calls list
+      setActiveCalls((prev) => [
+        ...prev,
+        {
+          callId,
+          creatorName,
+          participantCount,
+          createdAt: Date.now(),
+        },
+      ]);
+    };
+
+    /**
+     * Handle call ended
+     */
+    const handleCallEnded = ({ callId }) => {
+      console.log("🏁 [CALL ENDED] Call ended:", callId);
+
+      // Remove from active calls list
+      setActiveCalls((prev) => prev.filter((call) => call.callId !== callId));
+
+      // If we're in this call, clear participants
+      if (currentCallIdRef.current === callId) {
+        console.log("   We were in this call, clearing state");
+        setParticipants(new Map());
+      }
+    };
+
+    /**
+     * Handle participant count update
+     */
+    const handleParticipantCountUpdated = ({ callId, participantCount }) => {
+      console.log(
+        `👥 [PARTICIPANT COUNT] Call ${callId}: ${participantCount} participants`
+      );
+
+      // Update the specific call in active calls list
+      setActiveCalls((prev) =>
+        prev.map((call) =>
+          call.callId === callId ? { ...call, participantCount } : call
+        )
+      );
+    };
+
+    /**
      * Handle existing participants when joining
      */
     const handleExistingParticipants = (existingParticipants) => {
@@ -157,7 +308,7 @@ function useSocketSignaling(workspaceSlug, userId, userName) {
 
       const newParticipants = new Map();
       existingParticipants.forEach((participant) => {
-        // Don't add ourselves to the participants list
+        // Don't add ourselves
         if (participant.peerId === localPeerIdRef.current) {
           console.log(`   ⏭️ Skipping self (${participant.peerId})`);
           return;
@@ -275,30 +426,63 @@ function useSocketSignaling(workspaceSlug, userId, userName) {
       });
     };
 
+    /**
+     * Handle call error
+     */
+    const handleCallError = ({ message }) => {
+      console.error("❌ [CALL ERROR]", message);
+      // You can emit this to parent component via callback if needed
+    };
+
     // Register event listeners
+    socket.on("active_calls_list", handleActiveCallsList);
+    socket.on("call_created", handleCallCreated);
+    socket.on("call_ended", handleCallEnded);
+    socket.on("call_participant_count_updated", handleParticipantCountUpdated);
     socket.on("existing_participants", handleExistingParticipants);
     socket.on("user_joined_call", handleUserJoined);
     socket.on("peer_id_shared", handlePeerIdShared);
     socket.on("user_left_call", handleUserLeft);
+    socket.on("call_error", handleCallError);
 
     console.log("✅ [LISTENERS] All signaling listeners registered");
 
     // Cleanup listeners
     return () => {
       console.log("🧹 [LISTENERS] Cleaning up signaling listeners");
+      socket.off("active_calls_list", handleActiveCallsList);
+      socket.off("call_created", handleCallCreated);
+      socket.off("call_ended", handleCallEnded);
+      socket.off(
+        "call_participant_count_updated",
+        handleParticipantCountUpdated
+      );
       socket.off("existing_participants", handleExistingParticipants);
       socket.off("user_joined_call", handleUserJoined);
       socket.off("peer_id_shared", handlePeerIdShared);
       socket.off("user_left_call", handleUserLeft);
+      socket.off("call_error", handleCallError);
     };
-  }, []);
+  }, [workspaceSlug]);
+
+  // Auto-fetch active calls when connected
+  useEffect(() => {
+    if (isConnected && workspaceSlug && !callId) {
+      // Only fetch if we're in lobby (no specific callId)
+      console.log("🔄 [AUTO FETCH] Fetching active calls on connect");
+      getActiveCalls();
+    }
+  }, [isConnected, workspaceSlug, callId, getActiveCalls]);
 
   return {
     socket: socketRef.current,
     isConnected,
     participants,
-    joinVideoRoom,
-    leaveVideoRoom,
+    activeCalls,
+    createCall,
+    getActiveCalls,
+    joinCall,
+    leaveCall,
     sharePeerId,
   };
 }

@@ -1,21 +1,33 @@
 // frontend/src/pages/workspace/VideoPage.jsx
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import VideoPlayer from "../../components/VideoPlayer";
-import CallControls from "../../components/CallControls";
-import useUserMedia from "../../hooks/useUserMedia";
 import useSocketSignaling from "../../hooks/useSocketSignaling";
+import useUserMedia from "../../hooks/useUserMedia";
 import usePeerJSConnections from "../../hooks/usePeerJSConnections";
+import PreCallLobby from "../../components/PreCallLobby";
+import CallScreen from "../../components/CallScreen";
+import ActiveCallCard from "../../components/ActiveCallCard";
 
+/**
+ * VideoPage - Main video call coordinator
+ * NOW: Single source of truth for ALL persistent state
+ * Manages media, peer connections, and call lifecycle
+ */
 function VideoPage() {
   const { workspaceSlug } = useParams();
 
+  // User state
   const [userId, setUserId] = useState(null);
   const [userName, setUserName] = useState("");
-  const [callState, setCallState] = useState("lobby");
+
+  // Call flow state
+  const [currentCallId, setCurrentCallId] = useState(null);
+  const [callStage, setCallStage] = useState("lobby"); // 'lobby' | 'precall' | 'incall'
+  const [isCreatingCall, setIsCreatingCall] = useState(false);
   const [error, setError] = useState(null);
 
-  // Step 1: Get local media stream
+  // ✅ CRITICAL FIX: Initialize media and peer at component level (persistent)
+  // These hooks are ALWAYS active, not conditional on callStage
   const {
     localStream,
     isAudioEnabled,
@@ -28,27 +40,43 @@ function VideoPage() {
     toggleVideo,
   } = useUserMedia();
 
-  // Step 2: Initialize Socket.IO signaling
+  // ✅ Socket for LOBBY (listing active calls, creating calls)
   const {
     isConnected: socketConnected,
-    participants,
-    joinVideoRoom,
-    leaveVideoRoom,
-  } = useSocketSignaling(workspaceSlug, userId, userName);
+    activeCalls,
+    createCall,
+    getActiveCalls,
+  } = useSocketSignaling(workspaceSlug, userId, userName, null);
 
-  // Step 3: Initialize PeerJS with participants from socket
-  // ✅ CRITICAL FIX: Use participants from socket, not empty Map
+  // ✅ Socket for IN-CALL (call-specific signaling)
+  // Only connect when in a call
+  const {
+    isConnected: callSocketConnected,
+    participants: callParticipants,
+    joinCall: socketJoinCall,
+    leaveCall: socketLeaveCall,
+  } = useSocketSignaling(
+    workspaceSlug,
+    userId,
+    userName,
+    callStage === "incall" ? currentCallId : null
+  );
+
+  // ✅ PERSISTENT peer connections - always active once initialized
   const {
     localPeerId,
     remoteStreams,
     connectionStates,
     initializePeer,
     cleanupPeer,
-  } = usePeerJSConnections(localStream, participants);
+  } = usePeerJSConnections(
+    localStream,
+    callStage === "incall" ? callParticipants : new Map()
+  );
 
   // Load user info from session
   useEffect(() => {
-    console.log("🚀 VideoPage mounted");
+    console.log("🚀 [VIDEO PAGE] Mounted");
 
     try {
       const session = JSON.parse(localStorage.getItem("session"));
@@ -61,48 +89,38 @@ function VideoPage() {
 
         setUserId(uid);
         setUserName(uname);
-        console.log(`👤 User info loaded: ${uname} (${uid})`);
+        console.log(`👤 [USER] Loaded: ${uname} (${uid})`);
       } else {
-        console.warn("⚠️ No user session found");
+        console.warn("⚠️ [USER] No session found");
         setError("User session not found. Please log in.");
       }
     } catch (err) {
-      console.error("❌ Error loading user session:", err);
+      console.error("❌ [USER] Error loading session:", err);
       setError("Failed to load user session.");
     }
   }, []);
 
-  /**
-   * ✅ Join room when localPeerId becomes available
-   * CRITICAL: This needs to update the socket signaling hook with the peer ID
-   */
+  // Fetch active calls when connected to lobby
   useEffect(() => {
-    if (
-      callState === "in-call" &&
-      localPeerId &&
-      socketConnected &&
-      userId &&
-      userName
-    ) {
-      console.log("✅ All requirements met, joining video room...");
-      console.log(`   - Peer ID: ${localPeerId}`);
-      console.log(`   - User: ${userName} (${userId})`);
-
-      // Manually emit join with peer ID since we initialized socket with null
-      // We need to call joinVideoRoom but with the peer ID
-      // The socket hook needs to be updated to accept peer ID updates
-      joinVideoRoom(localPeerId);
+    if (socketConnected && userId && callStage === "lobby") {
+      console.log("🔄 [LOBBY] Fetching active calls...");
+      getActiveCalls();
     }
-  }, [
-    localPeerId,
-    callState,
-    socketConnected,
-    userId,
-    userName,
-    joinVideoRoom,
-  ]);
+  }, [socketConnected, userId, callStage, getActiveCalls]);
 
-  const handleJoinCall = async () => {
+  // ✅ CRITICAL: Cleanup ONLY on unmount, not on stage changes
+  useEffect(() => {
+    return () => {
+      console.log("🧹 [VIDEO PAGE] Unmounting - final cleanup");
+      stopMedia();
+      cleanupPeer();
+    };
+  }, [stopMedia, cleanupPeer]);
+
+  /**
+   * Handle creating a new call
+   */
+  const handleCreateCall = async () => {
     if (!userId || !userName) {
       setError("User information not available. Please refresh the page.");
       return;
@@ -115,83 +133,251 @@ function VideoPage() {
       return;
     }
 
-    console.log("🎬 Starting call join sequence...");
-    setCallState("connecting");
+    console.log("🎬 [CREATE] Creating new call...");
     setError(null);
+    setIsCreatingCall(true);
 
     try {
-      console.log("📹 Step 1: Starting local media...");
-      await startMedia();
-      console.log("✅ Step 1 complete: Local media started");
+      // Create call via socket
+      const callId = await createCall();
+      console.log(`✅ [CREATE] Call created with ID: ${callId}`);
 
-      console.log("🔷 Step 2: Initializing PeerJS and waiting for Peer ID...");
-      const peerId = await initializePeer();
-      console.log(`✅ Step 2 complete: PeerJS initialized with ID: ${peerId}`);
+      // Set current call
+      setCurrentCallId(callId);
 
-      console.log("✅ Step 3: Transitioning to in-call state");
-      setCallState("in-call");
-
-      console.log("✅ Successfully completed call join sequence");
+      // Move to pre-call stage
+      setCallStage("precall");
+      setIsCreatingCall(false);
     } catch (err) {
-      console.error("❌ Failed to join call:", err);
-      setError(err.message || "Failed to join call. Please try again.");
-      setCallState("lobby");
-      stopMedia();
-      cleanupPeer();
+      console.error("❌ [CREATE] Failed:", err);
+      setError(err.message || "Failed to create call. Please try again.");
+      setIsCreatingCall(false);
     }
   };
 
-  const handleLeaveCall = () => {
-    console.log("👋 Leaving call...");
-    leaveVideoRoom();
-    cleanupPeer();
+  /**
+   * Handle joining an existing call
+   */
+  const handleJoinCall = (callId) => {
+    console.log("📞 [JOIN] Joining call:", callId);
+    setCurrentCallId(callId);
+    setIsCreatingCall(false);
+    setCallStage("precall");
+  };
+
+  /**
+   * Handle pre-call ready (user clicked "Join Now")
+   */
+  const handlePreCallReady = async () => {
+    console.log("✅ [PRE-CALL] User ready, transitioning to call screen");
+
+    // Verify we have everything we need
+    if (!localStream) {
+      console.error("❌ [PRE-CALL] No local stream");
+      setError("Media stream not ready. Please try again.");
+      return;
+    }
+
+    if (!localPeerId) {
+      console.error("❌ [PRE-CALL] No peer ID");
+      setError("Connection not ready. Please try again.");
+      return;
+    }
+
+    console.log("🎥 [PRE-CALL] Stream ready:", {
+      videoTracks: localStream.getVideoTracks().length,
+      audioTracks: localStream.getAudioTracks().length,
+    });
+    console.log("🆔 [PRE-CALL] Peer ID:", localPeerId);
+
+    // ✅ CRITICAL: Just change stage - DON'T cleanup anything
+    // The media and peer are persistent and will be passed to CallScreen
+    setCallStage("incall");
+  };
+
+  /**
+   * Handle canceling pre-call lobby
+   */
+  const handleCancelPreCall = () => {
+    console.log("❌ [PRE-CALL] Cancelled");
+
+    // Stop media and cleanup peer
     stopMedia();
-    setCallState("lobby");
-    setError(null);
-    console.log("✅ Left call successfully");
+    cleanupPeer();
+
+    // Return to lobby
+    setCallStage("lobby");
+    setCurrentCallId(null);
+    setIsCreatingCall(false);
+
+    // Refresh active calls
+    getActiveCalls();
   };
 
-  const getGridClasses = () => {
-    const totalParticipants = (remoteStreams?.size || 0) + 1;
-    if (totalParticipants === 1) return "grid-cols-1";
-    if (totalParticipants === 2) return "grid-cols-2";
-    if (totalParticipants <= 4) return "grid-cols-2 grid-rows-2";
-    if (totalParticipants <= 6) return "grid-cols-3 grid-rows-2";
-    return "grid-cols-3 grid-rows-3";
+  /**
+   * Handle leaving call
+   */
+  const handleLeaveCall = () => {
+    console.log("👋 [LEAVE] Leaving call");
+
+    // Leave via socket first
+    if (currentCallId) {
+      socketLeaveCall(currentCallId);
+    }
+
+    // Stop media and cleanup peer
+    stopMedia();
+    cleanupPeer();
+
+    // Return to lobby
+    setCallStage("lobby");
+    setCurrentCallId(null);
+
+    // Refresh active calls
+    getActiveCalls();
   };
 
-  const totalParticipants = (remoteStreams?.size || 0) + 1;
-  const connectedPeers = Array.from(connectionStates?.values() || []).filter(
-    (state) => state === "connected"
-  ).length;
+  /**
+   * ✅ CRITICAL FIX: Initialize media ONLY when entering pre-call
+   * This happens ONCE and persists through the entire call
+   */
+  useEffect(() => {
+    if (callStage === "precall" && !localStream && !mediaLoading) {
+      console.log("🎥 [PRE-CALL] Initializing media and peer...");
+
+      startMedia()
+        .then(() => {
+          console.log("✅ [MEDIA] Started, initializing peer...");
+          return initializePeer();
+        })
+        .then((id) => {
+          console.log("✅ [PEER] Initialized with ID:", id);
+        })
+        .catch((err) => {
+          console.error("❌ [INIT] Media/Peer error:", err);
+          setError(err.message || "Failed to access camera/microphone");
+          // Return to lobby on error
+          setCallStage("lobby");
+          setCurrentCallId(null);
+        });
+    }
+  }, [callStage, localStream, mediaLoading, startMedia, initializePeer]);
+
+  // ✅ Join call via socket when entering in-call stage
+  useEffect(() => {
+    if (
+      callStage === "incall" &&
+      currentCallId &&
+      localPeerId &&
+      callSocketConnected
+    ) {
+      console.log("📡 [IN-CALL] Joining call via socket...");
+      console.log(`   Call ID: ${currentCallId}`);
+      console.log(`   Peer ID: ${localPeerId}`);
+
+      socketJoinCall(currentCallId, localPeerId);
+    }
+  }, [
+    callStage,
+    currentCallId,
+    localPeerId,
+    callSocketConnected,
+    socketJoinCall,
+  ]);
+
+  // Render based on call stage
+  if (callStage === "incall") {
+    return (
+      <CallScreen
+        callId={currentCallId}
+        workspaceSlug={workspaceSlug}
+        userId={userId}
+        userName={userName}
+        localStream={localStream}
+        localPeerId={localPeerId}
+        remoteStreams={remoteStreams}
+        connectionStates={connectionStates}
+        isAudioEnabled={isAudioEnabled}
+        isVideoEnabled={isVideoEnabled}
+        onToggleAudio={toggleAudio}
+        onToggleVideo={toggleVideo}
+        onLeave={handleLeaveCall}
+      />
+    );
+  }
 
   return (
     <div className="h-full bg-slate-950 flex flex-col">
-      <div className="bg-slate-900 border-b border-slate-800 p-4 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-100">
-              Video Conference
-            </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              {workspaceSlug && `Workspace: ${workspaceSlug}`}
-            </p>
-          </div>
+      {/* Header */}
+      <div className="bg-slate-900 border-b border-slate-800 p-6 flex-shrink-0">
+        <div className="max-w-6xl mx-auto">
+          <h1 className="text-3xl font-bold text-slate-100 mb-2">
+            Video Calls
+          </h1>
+          <p className="text-slate-400">
+            {workspaceSlug && `Workspace: ${workspaceSlug}`}
+          </p>
+        </div>
+      </div>
 
-          {callState === "in-call" && (
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-lg">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-slate-300 text-sm font-medium">
-                  {totalParticipants}{" "}
-                  {totalParticipants === 1 ? "participant" : "participants"}
-                </span>
-              </div>
-
-              {connectedPeers < (remoteStreams?.size || 0) && (
-                <div className="flex items-center gap-2 bg-amber-500/10 px-4 py-2 rounded-lg border border-amber-500/30">
+      {/* Lobby Content */}
+      <div className="flex-1 overflow-auto p-6">
+        <div className="max-w-6xl mx-auto">
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
+              <div className="flex items-start gap-3">
+                <svg
+                  className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div className="flex-1">
+                  <p className="text-red-400 font-medium">{error}</p>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  className="text-red-400 hover:text-red-300"
+                >
                   <svg
-                    className="animate-spin h-4 w-4 text-amber-400"
+                    className="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Create New Call Button */}
+          <div className="mb-8">
+            <button
+              onClick={handleCreateCall}
+              disabled={
+                !userId || !userName || !socketConnected || isCreatingCall
+              }
+              className="w-full max-w-2xl mx-auto flex items-center justify-center gap-3 p-8 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-slate-900 disabled:text-slate-500 rounded-xl shadow-lg hover:shadow-xl transition-all group"
+            >
+              {isCreatingCall ? (
+                <>
+                  <svg
+                    className="animate-spin h-6 w-6"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
@@ -210,16 +396,12 @@ function VideoPage() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     ></path>
                   </svg>
-                  <span className="text-amber-400 text-sm">
-                    Connecting to peers...
-                  </span>
-                </div>
-              )}
-
-              {!socketConnected && (
-                <div className="flex items-center gap-2 bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/30">
+                  <span className="text-xl font-bold">Creating call...</span>
+                </>
+              ) : (
+                <>
                   <svg
-                    className="h-4 w-4 text-red-400"
+                    className="w-8 h-8 group-hover:scale-110 transition-transform"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -228,312 +410,132 @@ function VideoPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
                     />
                   </svg>
-                  <span className="text-red-400 text-sm">Reconnecting...</span>
-                </div>
+                  <span className="text-xl font-bold">
+                    {!socketConnected
+                      ? "Connecting to server..."
+                      : !userId || !userName
+                      ? "Loading user info..."
+                      : "Start an instant meeting"}
+                  </span>
+                </>
               )}
+            </button>
+          </div>
+
+          {/* Active Calls Section */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-slate-200">
+                Active Calls
+              </h2>
+              <button
+                onClick={getActiveCalls}
+                disabled={!socketConnected}
+                className="text-sm text-cyan-400 hover:text-cyan-300 disabled:text-slate-600 flex items-center gap-2"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+                Refresh
+              </button>
             </div>
-          )}
+
+            {/* Loading State */}
+            {!socketConnected && (
+              <div className="text-center py-12">
+                <svg
+                  className="animate-spin h-8 w-8 text-cyan-400 mx-auto mb-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <p className="text-slate-400">Connecting to server...</p>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {socketConnected && activeCalls.length === 0 && (
+              <div className="text-center py-12 bg-slate-900/50 rounded-lg border border-slate-800">
+                <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                  <svg
+                    className="w-8 h-8 text-slate-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-300 mb-2">
+                  No active calls
+                </h3>
+                <p className="text-slate-500 text-sm">
+                  Start a new meeting to get started
+                </p>
+              </div>
+            )}
+
+            {/* Active Calls List */}
+            {socketConnected && activeCalls.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {activeCalls.map((call) => (
+                  <ActiveCallCard
+                    key={call.callId}
+                    call={call}
+                    onJoin={handleJoinCall}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {callState === "lobby" && (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="max-w-md w-full bg-slate-900 rounded-lg p-8 border border-slate-800 shadow-xl">
-              <div className="text-center mb-6">
-                <div className="w-20 h-20 rounded-full bg-cyan-500/10 flex items-center justify-center mx-auto mb-4">
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-cyan-400"
-                  >
-                    <polygon points="23 7 16 12 23 17 23 7"></polygon>
-                    <rect
-                      x="1"
-                      y="5"
-                      width="15"
-                      height="14"
-                      rx="2"
-                      ry="2"
-                    ></rect>
-                  </svg>
-                </div>
-                <h2 className="text-xl font-bold text-slate-100 mb-2">
-                  Ready to join?
-                </h2>
-                <p className="text-slate-400 text-sm">
-                  Join the video call with your team members in this workspace.
-                </p>
-              </div>
-
-              {(error || mediaError) && (
-                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <svg
-                      className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <p className="text-red-400 text-sm">
-                      {error || mediaError}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={handleJoinCall}
-                disabled={!userId || !userName || !socketConnected}
-                className="w-full py-3 px-4 bg-cyan-500 hover:bg-cyan-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-900 disabled:text-slate-500 font-semibold rounded-lg transition-colors"
-              >
-                {!socketConnected
-                  ? "Connecting to server..."
-                  : !userId || !userName
-                  ? "Loading user info..."
-                  : "Join Call"}
-              </button>
-
-              <div className="mt-4 text-center">
-                <p className="text-slate-500 text-xs">
-                  Make sure your camera and microphone are enabled
-                </p>
-                {!socketConnected && (
-                  <p className="text-amber-400 text-xs mt-2">
-                    Waiting for server connection...
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {callState === "connecting" && (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="text-center">
-              <svg
-                className="animate-spin h-12 w-12 text-cyan-400 mx-auto mb-4"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              <h2 className="text-xl font-bold text-slate-100 mb-2">
-                Connecting to call...
-              </h2>
-              <p className="text-slate-400 text-sm">
-                {mediaLoading && "Requesting camera and microphone access..."}
-                {!mediaLoading &&
-                  localStream &&
-                  !localPeerId &&
-                  "Initializing connection..."}
-                {localPeerId && "Joining video room..."}
-              </p>
-              <button
-                onClick={handleLeaveCall}
-                className="mt-6 px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {callState === "in-call" && (
-          <>
-            <div className="flex-1 overflow-auto p-6">
-              <div
-                className={`grid ${getGridClasses()} gap-4 max-w-7xl mx-auto h-full`}
-              >
-                <div className="relative">
-                  <VideoPlayer
-                    stream={localStream}
-                    isLocal={true}
-                    userName={userName}
-                    isMuted={!isAudioEnabled}
-                    isVideoOff={!isVideoEnabled}
-                  />
-                </div>
-
-                {Array.from(remoteStreams?.entries() || []).map(
-                  ([peerId, { stream, userName: remoteUserName }]) => {
-                    const connectionState = connectionStates?.get(peerId);
-                    const hasVideo = stream?.getVideoTracks()[0]?.enabled;
-
-                    return (
-                      <div key={peerId} className="relative">
-                        <VideoPlayer
-                          stream={stream}
-                          isLocal={false}
-                          userName={remoteUserName}
-                          isMuted={false}
-                          isVideoOff={!hasVideo}
-                        />
-
-                        {connectionState !== "connected" && (
-                          <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center rounded-lg">
-                            <div className="text-center">
-                              {connectionState === "connecting" && (
-                                <>
-                                  <svg
-                                    className="animate-spin h-8 w-8 text-cyan-400 mx-auto mb-2"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <circle
-                                      className="opacity-25"
-                                      cx="12"
-                                      cy="12"
-                                      r="10"
-                                      stroke="currentColor"
-                                      strokeWidth="4"
-                                    ></circle>
-                                    <path
-                                      className="opacity-75"
-                                      fill="currentColor"
-                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    ></path>
-                                  </svg>
-                                  <p className="text-slate-300 text-sm">
-                                    Connecting...
-                                  </p>
-                                </>
-                              )}
-                              {connectionState === "error" && (
-                                <>
-                                  <div className="text-red-400 text-4xl mb-2">
-                                    ⚠️
-                                  </div>
-                                  <p className="text-red-400 text-sm">
-                                    Connection failed
-                                  </p>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-                )}
-              </div>
-
-              <div className="mt-4 p-4 bg-slate-900/50 rounded-lg border border-slate-800">
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                  <div>
-                    <p className="text-slate-500 mb-1">Total Participants</p>
-                    <p className="text-slate-200 font-semibold">
-                      {totalParticipants}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 mb-1">Connected Peers</p>
-                    <p className="text-slate-200 font-semibold">
-                      {connectedPeers} / {remoteStreams?.size || 0}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 mb-1">Local Stream</p>
-                    <p className="text-slate-200 font-semibold">
-                      {localStream ? "✅ Active" : "❌ Inactive"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 mb-1">Socket Status</p>
-                    <p className="text-slate-200 font-semibold">
-                      {socketConnected ? "✅ Connected" : "❌ Disconnected"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 mb-1">Peer ID</p>
-                    <p className="text-slate-200 font-semibold text-xs">
-                      {localPeerId ? `${localPeerId.slice(0, 8)}...` : "N/A"}
-                    </p>
-                  </div>
-                </div>
-
-                {remoteStreams && remoteStreams.size > 0 && (
-                  <div className="mt-4 pt-4 border-t border-slate-800">
-                    <p className="text-slate-500 text-xs mb-2">
-                      Remote Connections:
-                    </p>
-                    <div className="space-y-1">
-                      {Array.from(remoteStreams?.entries() || []).map(
-                        ([peerId, { userName: remoteUserName }]) => {
-                          const state =
-                            connectionStates?.get(peerId) || "unknown";
-                          return (
-                            <div
-                              key={peerId}
-                              className="flex items-center justify-between text-xs"
-                            >
-                              <span className="text-slate-400">
-                                {remoteUserName} ({peerId.slice(0, 8)}...)
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded ${
-                                  state === "connected"
-                                    ? "bg-green-500/20 text-green-400"
-                                    : state === "error"
-                                    ? "bg-red-500/20 text-red-400"
-                                    : "bg-amber-500/20 text-amber-400"
-                                }`}
-                              >
-                                {state}
-                              </span>
-                            </div>
-                          );
-                        }
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex-shrink-0">
-              <CallControls
-                isMuted={!isAudioEnabled}
-                isVideoOff={!isVideoEnabled}
-                onToggleMute={toggleAudio}
-                onToggleVideo={toggleVideo}
-                onHangUp={handleLeaveCall}
-                participantCount={totalParticipants}
-              />
-            </div>
-          </>
-        )}
-      </div>
+      {/* Pre-Call Lobby Modal */}
+      <PreCallLobby
+        isOpen={callStage === "precall"}
+        localStream={localStream}
+        isAudioEnabled={isAudioEnabled}
+        isVideoEnabled={isVideoEnabled}
+        isInitializing={mediaLoading || !localPeerId}
+        error={mediaError}
+        onToggleAudio={toggleAudio}
+        onToggleVideo={toggleVideo}
+        onJoinCall={handlePreCallReady}
+        onCancel={handleCancelPreCall}
+      />
     </div>
   );
 }

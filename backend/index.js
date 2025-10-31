@@ -5,6 +5,7 @@ import http from "http";
 import { Server } from "socket.io";
 import { supabase } from "./supabaseClient.js";
 import liveblocksAuth from "./liveblocksAuth.js";
+import { v4 as uuidv4 } from "uuid";
 
 import authRoutes from "./authRoutes.js";
 import workspaceRoutes from "./workspaceRoutes.js";
@@ -33,16 +34,38 @@ app.use("/api/auth", authRoutes);
 app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/liveblocks", liveblocksAuth);
 
-// Track active video call participants per workspace
-// Structure: { workspaceSlug: { socketId: { userId, userName, peerId } } }
-const videoCallParticipants = {};
+// ===========================
+// VIDEO CALL DATA STRUCTURES
+// ===========================
+
+/**
+ * Store all active calls across all workspaces
+ * Structure: {
+ *   callId: {
+ *     workspaceSlug: string,
+ *     creatorId: string,
+ *     creatorName: string,
+ *     createdAt: timestamp,
+ *     participants: {
+ *       socketId: { userId, userName, peerId }
+ *     }
+ *   }
+ * }
+ */
+const activeCalls = {};
+
+/**
+ * Map workspace to its active call IDs
+ * Structure: { workspaceSlug: [callId1, callId2, ...] }
+ */
+const workspaceCalls = {};
 
 // Socket.io Logic
 io.on("connection", (socket) => {
   console.log("✅ A user connected:", socket.id);
 
   // ====================
-  // CHAT FUNCTIONALITY (Existing)
+  // CHAT FUNCTIONALITY (Existing - Unchanged)
   // ====================
 
   socket.on("join_workspace", (workspaceSlug) => {
@@ -84,40 +107,119 @@ io.on("connection", (socket) => {
   });
 
   // ====================
-  // VIDEO CALL SIGNALING (PeerJS)
+  // VIDEO CALL MANAGEMENT (New Multi-Call System)
   // ====================
 
   /**
-   * Join video call room with PeerJS ID
-   * Client sends: { workspaceSlug, userId, userName, peerId }
+   * Create a new call in the workspace
+   * Client sends: { workspaceSlug, userId, userName }
+   */
+  socket.on("create_call", ({ workspaceSlug, userId, userName }) => {
+    console.log(
+      `🎬 [CREATE CALL] ${userName} creating call in workspace: ${workspaceSlug}`
+    );
+
+    // Generate unique call ID
+    const callId = uuidv4();
+
+    // Initialize call data
+    activeCalls[callId] = {
+      workspaceSlug,
+      creatorId: userId,
+      creatorName: userName,
+      createdAt: Date.now(),
+      participants: {},
+    };
+
+    // Add to workspace calls list
+    if (!workspaceCalls[workspaceSlug]) {
+      workspaceCalls[workspaceSlug] = [];
+    }
+    workspaceCalls[workspaceSlug].push(callId);
+
+    console.log(`✅ [CALL CREATED] Call ID: ${callId}`);
+    console.log(`   Workspace: ${workspaceSlug}`);
+    console.log(`   Creator: ${userName} (${userId})`);
+
+    // Send callId back to creator
+    socket.emit("call_created", {
+      callId,
+      workspaceSlug,
+      creatorName: userName,
+      participantCount: 0,
+    });
+
+    // Broadcast to all users in workspace
+    socket.to(workspaceSlug).emit("call_created", {
+      callId,
+      workspaceSlug,
+      creatorName: userName,
+      participantCount: 0,
+    });
+
+    console.log(`📢 [BROADCAST] Call creation broadcasted to ${workspaceSlug}`);
+  });
+
+  /**
+   * Get list of active calls in workspace
+   * Client sends: { workspaceSlug }
+   */
+  socket.on("get_active_calls", ({ workspaceSlug }) => {
+    console.log(`📋 [GET CALLS] Request for active calls in: ${workspaceSlug}`);
+
+    const callIds = workspaceCalls[workspaceSlug] || [];
+    const calls = callIds
+      .map((callId) => {
+        const call = activeCalls[callId];
+        if (!call) return null;
+
+        return {
+          callId,
+          creatorName: call.creatorName,
+          participantCount: Object.keys(call.participants).length,
+          createdAt: call.createdAt,
+        };
+      })
+      .filter(Boolean); // Remove null entries
+
+    console.log(`   Found ${calls.length} active calls`);
+
+    socket.emit("active_calls_list", { workspaceSlug, calls });
+  });
+
+  /**
+   * Join a specific call
+   * Client sends: { callId, workspaceSlug, userId, userName, peerId }
    */
   socket.on(
-    "join_video_room",
-    ({ workspaceSlug, userId, userName, peerId }) => {
+    "join_call",
+    ({ callId, workspaceSlug, userId, userName, peerId }) => {
       console.log(
-        `🎥 User ${userName} (${socket.id}) joining video room: ${workspaceSlug} with PeerID: ${peerId}`
+        `🎥 [JOIN CALL] ${userName} (${socket.id}) joining call: ${callId}`
       );
 
-      // Join the video room
-      socket.join(`video:${workspaceSlug}`);
+      // Verify call exists
+      if (!activeCalls[callId]) {
+        console.error(`❌ [JOIN FAILED] Call ${callId} does not exist`);
+        socket.emit("call_error", {
+          message: "Call not found or has ended",
+        });
+        return;
+      }
 
-      // Store user info on socket for easier access
+      // Join the call's socket room
+      socket.join(`call:${callId}`);
+
+      // Store call info on socket
+      socket.currentCallId = callId;
       socket.videoWorkspace = workspaceSlug;
       socket.videoUserName = userName;
       socket.videoUserId = userId;
       socket.videoPeerId = peerId;
 
-      // Initialize participants object for this workspace if needed
-      if (!videoCallParticipants[workspaceSlug]) {
-        videoCallParticipants[workspaceSlug] = {};
-        console.log(
-          `🆕 Created new video room for workspace: ${workspaceSlug}`
-        );
-      }
-
-      // Get list of existing participants (before adding current user)
+      // Get existing participants before adding current user
       const existingParticipants = Object.entries(
-        videoCallParticipants[workspaceSlug]
+        activeCalls[callId].participants
       ).map(([socketId, data]) => ({
         socketId,
         userId: data.userId,
@@ -126,114 +228,83 @@ io.on("connection", (socket) => {
       }));
 
       console.log(
-        `👥 Existing participants in ${workspaceSlug}:`,
-        existingParticipants.length,
-        existingParticipants.map((p) => `${p.userName} (${p.peerId})`)
+        `👥 Existing participants in call ${callId}:`,
+        existingParticipants.length
       );
 
-      // Add current user to participants
-      videoCallParticipants[workspaceSlug][socket.id] = {
+      // Add user to call participants
+      activeCalls[callId].participants[socket.id] = {
         userId,
         userName,
         peerId,
       };
 
-      // Send existing participants to the new user
+      const participantCount = Object.keys(
+        activeCalls[callId].participants
+      ).length;
+
+      // Send existing participants to new user
       socket.emit("existing_participants", existingParticipants);
       console.log(
         `📤 Sent ${existingParticipants.length} existing participants to ${socket.id}`
       );
 
-      // Notify other users in video room that someone joined (with their peer ID)
-      socket.to(`video:${workspaceSlug}`).emit("user_joined_call", {
+      // Notify others in call that someone joined
+      socket.to(`call:${callId}`).emit("user_joined_call", {
         socketId: socket.id,
         userId,
         userName,
         peerId,
       });
 
-      // Also notify workspace (for call indicators on other pages)
-      io.to(workspaceSlug).emit("call_participant_joined", {
-        socketId: socket.id,
-        userId,
-        userName,
-        peerId,
+      // Broadcast participant count update to workspace
+      io.to(workspaceSlug).emit("call_participant_count_updated", {
+        callId,
+        participantCount,
       });
 
       console.log(
-        `📊 Active participants in ${workspaceSlug}:`,
-        Object.keys(videoCallParticipants[workspaceSlug]).length
+        `✅ [JOIN SUCCESS] ${userName} joined call ${callId}. Total participants: ${participantCount}`
       );
     }
   );
 
   /**
-   * Share or update PeerJS ID
-   * Client sends: { workspaceSlug, peerId }
+   * Leave a specific call
+   * Client sends: { callId }
    */
-  socket.on("share_peer_id", ({ workspaceSlug, peerId }) => {
+  socket.on("leave_call", ({ callId }) => {
     console.log(
-      `🆔 User ${socket.id} (${
+      `👋 [LEAVE CALL] ${socket.id} (${
         socket.videoUserName || "Unknown"
-      }) sharing peer ID: ${peerId}`
+      }) leaving call: ${callId}`
+    );
+    handleUserLeaveCall(socket, callId);
+  });
+
+  /**
+   * Share or update PeerJS ID within a call
+   * Client sends: { callId, peerId }
+   */
+  socket.on("share_peer_id", ({ callId, peerId }) => {
+    console.log(
+      `🆔 [SHARE PEER] User ${socket.id} sharing peer ID: ${peerId} in call: ${callId}`
     );
 
-    // Update peer ID in participants
-    if (
-      videoCallParticipants[workspaceSlug] &&
-      videoCallParticipants[workspaceSlug][socket.id]
-    ) {
-      videoCallParticipants[workspaceSlug][socket.id].peerId = peerId;
+    // Update peer ID in call participants
+    if (activeCalls[callId] && activeCalls[callId].participants[socket.id]) {
+      activeCalls[callId].participants[socket.id].peerId = peerId;
       socket.videoPeerId = peerId;
     }
 
-    // Broadcast to all users in video room
-    socket.to(`video:${workspaceSlug}`).emit("peer_id_shared", {
+    // Broadcast to others in the call
+    socket.to(`call:${callId}`).emit("peer_id_shared", {
       socketId: socket.id,
       peerId,
       userName: socket.videoUserName || "User",
     });
 
-    console.log(`✅ Peer ID shared successfully to video room`);
-  });
-
-  /**
-   * Get current call status for a workspace
-   * Client sends: { workspaceSlug }
-   */
-  socket.on("get_call_status", ({ workspaceSlug }) => {
-    console.log(
-      `📊 Call status requested for workspace: ${workspaceSlug} by ${socket.id}`
-    );
-
-    const participants = videoCallParticipants[workspaceSlug];
-    const participantsList = participants
-      ? Object.entries(participants).map(([socketId, data]) => ({
-          socketId,
-          userId: data.userId,
-          userName: data.userName,
-          peerId: data.peerId,
-        }))
-      : [];
-
-    console.log(
-      `📤 Sending call status: ${participantsList.length} participants`
-    );
-
-    socket.emit("call_status", { participants: participantsList });
-  });
-
-  /**
-   * Leave video call
-   * Client sends: { workspaceSlug }
-   */
-  socket.on("leave_video_room", ({ workspaceSlug }) => {
-    console.log(
-      `👋 User ${socket.id} (${
-        socket.videoUserName || "Unknown"
-      }) leaving video room: ${workspaceSlug}`
-    );
-    handleUserLeaveCall(socket, workspaceSlug);
+    console.log(`✅ Peer ID shared successfully in call ${callId}`);
   });
 
   /**
@@ -246,70 +317,94 @@ io.on("connection", (socket) => {
       socket.videoUserName ? `(${socket.videoUserName})` : ""
     );
 
-    // Remove user from all video call rooms
-    for (const workspaceSlug in videoCallParticipants) {
-      if (videoCallParticipants[workspaceSlug][socket.id]) {
-        console.log(
-          `🧹 Cleaning up video room for ${socket.id} in workspace ${workspaceSlug}`
-        );
-        handleUserLeaveCall(socket, workspaceSlug);
-      }
+    // Remove user from any call they're in
+    if (socket.currentCallId) {
+      console.log(
+        `🧹 Cleaning up call ${socket.currentCallId} for ${socket.id}`
+      );
+      handleUserLeaveCall(socket, socket.currentCallId);
     }
   });
 });
 
 /**
- * Helper function to handle user leaving a video call
+ * Helper function to handle user leaving a call
  */
-function handleUserLeaveCall(socket, workspaceSlug) {
-  if (
-    videoCallParticipants[workspaceSlug] &&
-    videoCallParticipants[workspaceSlug][socket.id]
-  ) {
-    const userName = videoCallParticipants[workspaceSlug][socket.id].userName;
-    const peerId = videoCallParticipants[workspaceSlug][socket.id].peerId;
+function handleUserLeaveCall(socket, callId) {
+  if (!activeCalls[callId]) {
+    console.log(`⚠️ Call ${callId} does not exist`);
+    return;
+  }
 
-    // Remove user from participants
-    delete videoCallParticipants[workspaceSlug][socket.id];
+  if (!activeCalls[callId].participants[socket.id]) {
+    console.log(`⚠️ User ${socket.id} was not in call ${callId}`);
+    return;
+  }
 
-    // Leave the socket room
-    socket.leave(`video:${workspaceSlug}`);
+  const userName = activeCalls[callId].participants[socket.id].userName;
+  const peerId = activeCalls[callId].participants[socket.id].peerId;
+  const workspaceSlug = activeCalls[callId].workspaceSlug;
 
-    // Notify other users in video room
-    socket.to(`video:${workspaceSlug}`).emit("user_left_call", {
-      socketId: socket.id,
-      peerId,
-    });
+  // Remove user from call participants
+  delete activeCalls[callId].participants[socket.id];
 
-    // Also notify workspace (for call indicators)
-    io.to(workspaceSlug).emit("call_participant_left", {
-      socketId: socket.id,
-      peerId,
-    });
+  // Leave the call room
+  socket.leave(`call:${callId}`);
 
-    const remainingCount = videoCallParticipants[workspaceSlug]
-      ? Object.keys(videoCallParticipants[workspaceSlug]).length
-      : 0;
+  const remainingCount = Object.keys(activeCalls[callId].participants).length;
+
+  // Notify others in call that user left
+  socket.to(`call:${callId}`).emit("user_left_call", {
+    socketId: socket.id,
+    peerId,
+  });
+
+  console.log(
+    `✅ User ${
+      userName || socket.id
+    } removed from call ${callId}. Remaining: ${remainingCount}`
+  );
+
+  // If call is now empty, end the call
+  if (remainingCount === 0) {
     console.log(
-      `✅ User ${
-        userName || socket.id
-      } removed from video room ${workspaceSlug}. Remaining: ${remainingCount}`
+      `🏁 [CALL ENDED] Call ${callId} has no participants, ending...`
     );
 
-    // Clean up empty workspace entries
-    if (remainingCount === 0) {
-      delete videoCallParticipants[workspaceSlug];
-      console.log(
-        `🧹 Deleted empty video room for workspace: ${workspaceSlug}`
+    // Remove from active calls
+    delete activeCalls[callId];
+
+    // Remove from workspace calls list
+    if (workspaceCalls[workspaceSlug]) {
+      workspaceCalls[workspaceSlug] = workspaceCalls[workspaceSlug].filter(
+        (id) => id !== callId
       );
+
+      // Clean up empty workspace entries
+      if (workspaceCalls[workspaceSlug].length === 0) {
+        delete workspaceCalls[workspaceSlug];
+      }
     }
+
+    // Broadcast call ended to workspace
+    io.to(workspaceSlug).emit("call_ended", { callId });
+
+    console.log(
+      `📢 [BROADCAST] Call ${callId} ended, broadcasted to ${workspaceSlug}`
+    );
   } else {
-    console.log(`⚠️ User ${socket.id} was not in video room ${workspaceSlug}`);
+    // Update participant count
+    io.to(workspaceSlug).emit("call_participant_count_updated", {
+      callId,
+      participantCount: remainingCount,
+    });
   }
 }
 
 // Start the server
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`✅ Video call signaling server initialized (PeerJS mode)`);
+  console.log(
+    `✅ Video call signaling server initialized (Multi-call PeerJS mode)`
+  );
 });
