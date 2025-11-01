@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 export function CreateListForm({ boardId, workspaceSlug, onListCreated }) {
   const [title, setTitle] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
@@ -19,7 +21,7 @@ export function CreateListForm({ boardId, workspaceSlug, onListCreated }) {
     setIsSubmitting(true);
     try {
       const { data: newList } = await axios.post(
-        `http://localhost:3001/api/workspaces/boards/${boardId}/lists`,
+        `${API_URL}/api/workspaces/boards/${boardId}/lists`,
         { title, workspaceSlug },
         { headers: getAuthHeader() }
       );

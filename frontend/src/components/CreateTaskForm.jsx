@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 export function CreateTaskForm({ listId, workspaceSlug, onTaskCreated }) {
   const [content, setContent] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
@@ -19,7 +21,7 @@ export function CreateTaskForm({ listId, workspaceSlug, onTaskCreated }) {
     setIsSubmitting(true);
     try {
       const { data: newTask } = await axios.post(
-        `http://localhost:3001/api/workspaces/lists/${listId}/tasks`,
+        `${API_URL}/api/workspaces/lists/${listId}/tasks`,
         { content, workspaceSlug },
         { headers: getAuthHeader() }
       );

@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import io from 'socket.io-client';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 /**
  * CallNotificationIndicator - Shows active call status and allows quick join
  * Displays across all workspace pages (except video page itself)
@@ -24,7 +26,7 @@ function CallNotificationIndicator() {
     if (!workspaceSlug || isOnVideoPage) return;
 
     // Connect to socket
-    socketRef.current = io('http://localhost:3001');
+    socketRef.current = io(API_URL);
     
     // Request current call status
     const requestCallStatus = () => {

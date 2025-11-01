@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 /**
  * InlineCallBanner - Shows a banner at the top of pages when a call is active
  * Can be placed inside any workspace page (e.g., ChatPage)
@@ -20,7 +22,7 @@ function InlineCallBanner() {
     if (!workspaceSlug) return;
 
     // Connect to socket
-    socketRef.current = io('http://localhost:3001');
+    socketRef.current = io(API_URL);
     
     // Request current call status
     const requestCallStatus = () => {
