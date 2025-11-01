@@ -284,7 +284,7 @@ function TaskBoardPage() {
     // API Call
     axios
       .patch(
-        `http://localhost:3001/api/workspaces/lists/${listId}`,
+        `${API_URL}/api/workspaces/lists/${listId}`,
         { title: newTitle, workspaceSlug },
         { headers: getAuthHeader() }
       )
