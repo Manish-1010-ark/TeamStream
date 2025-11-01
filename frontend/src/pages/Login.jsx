@@ -18,13 +18,11 @@ function Login() {
 
     try {
       // The login API returns the session data
-      const { data } = await axios.post(
-        "http://localhost:3001/api/auth/login",
-        {
-          email,
-          password,
-        }
-      );
+      const API_URL = import.meta.env.VITE_API_URL;
+      const { data } = await axios.post(`${API_URL}/api/auth/login`, {
+        email,
+        password,
+      });
 
       // Save the session to localStorage
       localStorage.setItem("session", JSON.stringify(data.session));

@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import io from "socket.io-client";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 /**
  * Custom hook to manage Socket.IO connection and video call signaling
  * Supports multi-call system with call IDs
@@ -34,7 +36,7 @@ function useSocketSignaling(workspaceSlug, userId, userName, callId = null) {
     console.log("🔌 [SOCKET] Initializing Socket.IO connection...");
 
     // Create socket connection
-    const socket = io("http://localhost:3001", {
+    const socket = io(API_URL, {
       transports: ["websocket", "polling"],
     });
 

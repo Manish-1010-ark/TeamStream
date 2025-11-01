@@ -20,11 +20,8 @@ function Signup() {
     setSuccess("");
 
     try {
-      await axios.post("http://localhost:3001/api/auth/signup", {
-        name,
-        email,
-        password,
-      });
+      const API_URL = import.meta.env.VITE_API_URL;
+      await axios.post(`${API_URL}/api/auth/signup`, { name, email, password });
       setSuccess(
         "Account created successfully! Please check your email to confirm your account."
       );

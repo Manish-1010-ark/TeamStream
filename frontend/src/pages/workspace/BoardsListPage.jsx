@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function BoardsListPage() {
   const { workspaceSlug } = useParams();
   const navigate = useNavigate();
@@ -26,7 +28,7 @@ function BoardsListPage() {
       if (!headers) return;
 
       const { data } = await axios.get(
-        `http://localhost:3001/api/workspaces/${workspaceSlug}/boards`,
+        `${API_URL}/api/workspaces/${workspaceSlug}/boards`,
         { headers }
       );
       setBoards(data);
@@ -50,7 +52,7 @@ function BoardsListPage() {
     setIsSubmitting(true);
     try {
       await axios.post(
-        `http://localhost:3001/api/workspaces/${workspaceSlug}/boards`,
+        `${API_URL}/api/workspaces/${workspaceSlug}/boards`,
         { title: newBoardTitle },
         { headers: getAuthHeader() }
       );
@@ -83,10 +85,9 @@ function BoardsListPage() {
     setBoards(boards.filter((board) => board.id !== boardId));
 
     try {
-      await axios.delete(
-        `http://localhost:3001/api/workspaces/boards/${boardId}`,
-        { headers: getAuthHeader() }
-      );
+      await axios.delete(`${API_URL}/api/workspaces/boards/${boardId}`, {
+        headers: getAuthHeader(),
+      });
     } catch (error) {
       console.error("Failed to delete board:", error);
       setError("Failed to delete the board. Please try again.");

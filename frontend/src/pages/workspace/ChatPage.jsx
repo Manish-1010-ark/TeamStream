@@ -5,6 +5,8 @@ import io from "socket.io-client";
 import axios from "axios";
 import InlineCallBanner from "../../components/InlineCallBanner";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function ChatPage() {
   const { workspaceSlug } = useParams();
   const [messages, setMessages] = useState([]);
@@ -26,14 +28,14 @@ function ChatPage() {
     }
 
     // Create socket connection
-    socketRef.current = io("http://localhost:3001");
+    socketRef.current = io(API_URL);
     const socket = socketRef.current;
 
     // Fetch initial messages
     const fetchMessages = async () => {
       try {
         const { data } = await axios.get(
-          `http://localhost:3001/api/workspaces/${workspaceSlug}/messages`,
+          `${API_URL}/api/workspaces/${workspaceSlug}/messages`,
           { headers: getAuthHeader() }
         );
         setMessages(data);

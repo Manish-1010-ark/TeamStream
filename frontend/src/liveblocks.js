@@ -10,7 +10,8 @@ const client = createClient({
       throw new Error("Not authenticated");
     }
 
-    const response = await fetch("http://localhost:3001/api/liveblocks/auth", {
+    const API_URL = import.meta.env.VITE_API_URL;
+    const response = await fetch(`${API_URL}/api/liveblocks/auth`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 // ============================================================================
 // DOCUMENT CARD MENU COMPONENT
 // ============================================================================
@@ -143,7 +145,7 @@ function DocumentsPage() {
 
       setLoading(true);
       const { data } = await axios.get(
-        `http://localhost:3001/api/workspaces/${workspaceSlug}/documents`,
+        `${API_URL}/api/workspaces/${workspaceSlug}/documents`,
         { headers }
       );
       setDocuments(data);
@@ -166,7 +168,7 @@ function DocumentsPage() {
     setIsSubmitting(true);
     try {
       const { data: newDoc } = await axios.post(
-        `http://localhost:3001/api/workspaces/${workspaceSlug}/documents`,
+        `${API_URL}/api/workspaces/${workspaceSlug}/documents`,
         { title: newDocTitle },
         { headers: getAuthHeader() }
       );
@@ -188,10 +190,9 @@ function DocumentsPage() {
     setDocuments(documents.filter((doc) => doc.id !== docId)); // Optimistic update
 
     try {
-      await axios.delete(
-        `http://localhost:3001/api/workspaces/documents/${docId}`,
-        { headers: getAuthHeader() }
-      );
+      await axios.delete(`${API_URL}/api/workspaces/documents/${docId}`, {
+        headers: getAuthHeader(),
+      });
     } catch (err) {
       console.error("Failed to delete document", err);
       setError("Failed to delete document.");
@@ -210,7 +211,7 @@ function DocumentsPage() {
 
     try {
       await axios.patch(
-        `http://localhost:3001/api/workspaces/documents/${docId}`,
+        `${API_URL}/api/workspaces/documents/${docId}`,
         { title: newTitle },
         { headers: getAuthHeader() }
       );

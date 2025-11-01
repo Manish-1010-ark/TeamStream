@@ -23,6 +23,8 @@ import WhiteboardPage from "./pages/workspace/WhiteboardPage";
 import VideoPage from "./pages/workspace/VideoPage";
 import WorkspaceInfoPage from "./pages/workspace/WorkspaceInfoPage";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function App() {
   return (
     <Router>
@@ -33,17 +35,14 @@ function App() {
             throw new Error("Not authenticated");
           }
 
-          const response = await fetch(
-            "http://localhost:3001/api/liveblocks/auth",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({ room }),
-            }
-          );
+          const response = await fetch(`${API_URL}/api/liveblocks/auth`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ room }),
+          });
 
           if (!response.ok) {
             const errorBody = await response.text();

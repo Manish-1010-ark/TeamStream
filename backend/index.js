@@ -17,7 +17,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173","https://team-stream-bumumf261-manishs-projects-e2ca7878.vercel.app"],
     methods: ["GET", "POST"],
   },
 });
@@ -60,18 +60,101 @@ const activeCalls = {};
  */
 const workspaceCalls = {};
 
-// Socket.io Logic
+// ===========================
+// PRESENCE DATA STRUCTURES
+// ===========================
+
+/**
+ * Store online users per workspace
+ * Structure: Map(workspaceSlug -> Set of userIds)
+ */
+const onlineUsers = new Map();
+
+// ===========================
+// SOCKET.IO LOGIC
+// ===========================
+
 io.on("connection", (socket) => {
   console.log("✅ A user connected:", socket.id);
 
   // ====================
-  // CHAT FUNCTIONALITY (Existing - Unchanged)
+  // WORKSPACE & PRESENCE
   // ====================
 
   socket.on("join_workspace", (workspaceSlug) => {
     socket.join(workspaceSlug);
     console.log(`User ${socket.id} joined room: ${workspaceSlug}`);
   });
+
+  // User comes online
+  socket.on("user_online", ({ workspaceSlug, userId, userName }) => {
+    console.log(
+      `🟢 [PRESENCE] User ${userName} (${userId}) online in ${workspaceSlug}`
+    );
+
+    // Initialize workspace set if it doesn't exist
+    if (!onlineUsers.has(workspaceSlug)) {
+      onlineUsers.set(workspaceSlug, new Set());
+    }
+
+    // Add user to online users for this workspace
+    onlineUsers.get(workspaceSlug).add(userId);
+
+    // Store user info in socket for cleanup
+    socket.userId = userId;
+    socket.workspaceSlug = workspaceSlug;
+    socket.userName = userName;
+
+    // Get current online users
+    const currentOnlineUsers = Array.from(onlineUsers.get(workspaceSlug) || []);
+    console.log(
+      `📊 [PRESENCE] Online users in ${workspaceSlug}:`,
+      currentOnlineUsers
+    );
+
+    // Broadcast to all users in the workspace
+    io.to(workspaceSlug).emit("presence_update", {
+      onlineUsers: currentOnlineUsers,
+    });
+  });
+
+  // Handle get_presence request
+  socket.on("get_presence", ({ workspaceSlug }) => {
+    console.log(`📋 [PRESENCE] Request for online users in: ${workspaceSlug}`);
+    const users = Array.from(onlineUsers.get(workspaceSlug) || []);
+    console.log(`   Sent ${users.length} online users to ${socket.id}`);
+
+    socket.emit("presence_list", {
+      onlineUsers: users,
+    });
+  });
+
+  // Handle manual user_offline event
+  socket.on("user_offline", ({ workspaceSlug, userId }) => {
+    console.log(
+      `🔴 [PRESENCE] User ${userId} manually went offline in ${workspaceSlug}`
+    );
+
+    if (onlineUsers.has(workspaceSlug)) {
+      onlineUsers.get(workspaceSlug).delete(userId);
+
+      const currentOnlineUsers = Array.from(
+        onlineUsers.get(workspaceSlug) || []
+      );
+      console.log(
+        `📊 [PRESENCE] Updated online users in ${workspaceSlug}:`,
+        currentOnlineUsers
+      );
+
+      io.to(workspaceSlug).emit("presence_update", {
+        onlineUsers: currentOnlineUsers,
+      });
+    }
+  });
+
+  // ====================
+  // CHAT FUNCTIONALITY
+  // ====================
 
   socket.on("send_message", async ({ content, workspaceSlug, userId }) => {
     try {
@@ -107,7 +190,7 @@ io.on("connection", (socket) => {
   });
 
   // ====================
-  // VIDEO CALL MANAGEMENT (New Multi-Call System)
+  // VIDEO CALL MANAGEMENT
   // ====================
 
   /**
@@ -307,17 +390,50 @@ io.on("connection", (socket) => {
     console.log(`✅ Peer ID shared successfully in call ${callId}`);
   });
 
-  /**
-   * Handle disconnection
-   */
-  socket.on("disconnect", () => {
+  // ====================
+  // DISCONNECTION HANDLING
+  // ====================
+
+  socket.on("disconnect", (reason) => {
     console.log(
-      "❌ A user disconnected:",
-      socket.id,
-      socket.videoUserName ? `(${socket.videoUserName})` : ""
+      `❌ A user disconnected: ${socket.id} (${socket.userName || "Unknown"})`
     );
 
-    // Remove user from any call they're in
+    // Handle presence cleanup
+    if (socket.workspaceSlug && socket.userId) {
+      const workspaceSlug = socket.workspaceSlug;
+      const userId = socket.userId;
+
+      console.log(
+        `🧹 [PRESENCE] Cleaning up user ${userId} from ${workspaceSlug}`
+      );
+
+      // Remove user from online users
+      if (onlineUsers.has(workspaceSlug)) {
+        onlineUsers.get(workspaceSlug).delete(userId);
+
+        // Clean up empty workspace sets
+        if (onlineUsers.get(workspaceSlug).size === 0) {
+          onlineUsers.delete(workspaceSlug);
+        }
+
+        // Get updated online users
+        const currentOnlineUsers = Array.from(
+          onlineUsers.get(workspaceSlug) || []
+        );
+        console.log(
+          `📊 [PRESENCE] Updated online users in ${workspaceSlug}:`,
+          currentOnlineUsers
+        );
+
+        // Broadcast to all users in the workspace
+        io.to(workspaceSlug).emit("presence_update", {
+          onlineUsers: currentOnlineUsers,
+        });
+      }
+    }
+
+    // Handle video call cleanup
     if (socket.currentCallId) {
       console.log(
         `🧹 Cleaning up call ${socket.currentCallId} for ${socket.id}`

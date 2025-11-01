@@ -16,9 +16,8 @@ function ForgotPassword() {
     setMessage("");
 
     try {
-      await axios.post("http://localhost:3001/api/auth/forgot-password", {
-        email,
-      });
+      const API_URL = import.meta.env.VITE_API_URL;
+      await axios.post(`${API_URL}/api/auth/forgot-password`, { email });
       setMessage("Password reset link has been sent to your email address.");
       setIsSuccess(true);
     } catch (error) {

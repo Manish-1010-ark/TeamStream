@@ -8,8 +8,10 @@ import IconTasks from "./icons/IconTasks";
 import IconWhiteboard from "./icons/IconWhiteboard";
 import IconVideo from "./icons/IconVideo";
 import ProfileDropdown from "./ProfileDropdown";
-import CopyButton from "./CopyButton";
 import CallNotificationIndicator from "./CallNotificationIndicator";
+import { useWorkspacePresence } from "../hooks/useWorkspacePresence"; // Add this import
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 function WorkspaceLayout() {
   const navigate = useNavigate();
@@ -20,6 +22,8 @@ function WorkspaceLayout() {
   const [userName, setUserName] = useState("");
   const [loading, setLoading] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { onlineCount, isConnected } = useWorkspacePresence(workspaceSlug);
+
 
   const getAuthHeader = useCallback(() => {
     const session = JSON.parse(localStorage.getItem("session"));
@@ -43,10 +47,16 @@ function WorkspaceLayout() {
         const headers = getAuthHeader();
         if (!headers) return;
 
-        const { data: currentWorkspace } = await axios.get(
-          `http://localhost:3001/api/workspaces/${workspaceSlug}`,
+        console.log(`🔄 Fetching workspace: ${workspaceSlug}`);
+
+        const response = await axios.get(
+          `${API_URL}/api/workspaces/${workspaceSlug}`,
           { headers }
         );
+
+        const currentWorkspace = response.data;
+        console.log("✅ Workspace data:", currentWorkspace);
+
         setWorkspaceName(currentWorkspace.name);
         setWorkspaceId(currentWorkspace.id);
 
@@ -59,11 +69,15 @@ function WorkspaceLayout() {
           );
         }
       } catch (error) {
-        console.error("Failed to fetch workspace data", error);
+        console.error("❌ Failed to fetch workspace data", error);
+        console.error("Error details:", error.response?.data);
 
-        if (error.response && error.response.status === 401) {
+        if (error.response?.status === 401) {
           localStorage.removeItem("session");
           navigate("/login");
+        } else if (error.response?.status === 404) {
+          console.error(`Workspace '${workspaceSlug}' not found`);
+          navigate("/dashboard");
         } else {
           navigate("/dashboard");
         }
@@ -143,6 +157,21 @@ function WorkspaceLayout() {
               </h1>
             </div>
           </div>
+          
+          {/* Online Status Indicator */}
+          <div className={`flex items-center gap-2 text-sm text-slate-400 mb-3 ${
+            isSidebarCollapsed ? "justify-center" : ""
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${
+              isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
+            }`}></span>
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              isSidebarCollapsed ? "w-0 opacity-0" : "w-full opacity-100"
+            }`}>
+              <span>{isConnected ? `${onlineCount} online` : "Connecting..."}</span>
+            </div>
+          </div>
+
           <button
             onClick={handleBackToDashboard}
             className={`w-full text-sm font-semibold transition-all duration-200 flex items-center space-x-3 px-4 py-3 rounded-lg bg-slate-800 text-slate-300 hover:bg-cyan-500 hover:text-slate-900 ${
@@ -247,7 +276,7 @@ function WorkspaceLayout() {
       {/* Main Content Area */}
       <main className="flex-1 h-full overflow-hidden relative">
         <Outlet />
-        
+
         {/* Call Notification Indicator - Floats over content */}
         <CallNotificationIndicator />
       </main>

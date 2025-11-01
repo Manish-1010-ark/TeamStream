@@ -3,6 +3,8 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function Dashboard() {
   const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState([]);
@@ -24,7 +26,7 @@ function Dashboard() {
 
   const fetchWorkspaces = async () => {
     try {
-      const { data } = await axios.get("http://localhost:3001/api/workspaces", {
+      const { data } = await axios.get(`${API_URL}/api/workspaces`, {
         headers: getAuthHeader(),
       });
       setWorkspaces(data);
@@ -54,13 +56,12 @@ function Dashboard() {
     setCreateLoading(true);
     try {
       const { data } = await axios.post(
-        "http://localhost:3001/api/workspaces/create",
+        `${API_URL}/api/workspaces/create`,
         { name: newWorkspaceName },
         { headers: getAuthHeader() }
       );
       setNewWorkspaceName("");
       fetchWorkspaces();
-      // FIX: Navigate using the new workspace's slug, not its id
       if (data.slug) {
         navigate(`/workspace/${data.slug}/chat`);
       }
@@ -79,7 +80,7 @@ function Dashboard() {
     setJoinLoading(true);
     try {
       await axios.post(
-        "http://localhost:3001/api/workspaces/join",
+        `${API_URL}/api/workspaces/join`,
         { workspace_id: joinWorkspaceId },
         { headers: getAuthHeader() }
       );

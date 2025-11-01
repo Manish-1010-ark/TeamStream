@@ -18,6 +18,8 @@ import { EditTaskModal } from "../../components/EditTaskModal"; // Import the mo
 import { List } from "../../components/List";
 import { Task } from "../../components/Task";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function TaskBoardPage() {
   const { workspaceSlug, boardId } = useParams();
   const [boardData, setBoardData] = useState(null);
@@ -35,7 +37,7 @@ function TaskBoardPage() {
     // No setLoading(true) here to allow for silent background refetches
     try {
       const { data } = await axios.get(
-        `http://localhost:3001/api/workspaces/boards/${boardId}`, // Use boardId here
+        `${API_URL}/api/workspaces/boards/${boardId}`, // Use boardId here
         { headers: getAuthHeader() }
       );
       setBoardData(data);
@@ -73,7 +75,7 @@ function TaskBoardPage() {
     // Call the API to delete the task from the database
     axios
       .delete(
-        `http://localhost:3001/api/workspaces/tasks/${taskId}`,
+        `${API_URL}/api/workspaces/tasks/${taskId}`,
         // DELETE requests need to pass body data in a `data` property
         {
           headers: getAuthHeader(),
@@ -90,7 +92,7 @@ function TaskBoardPage() {
   useEffect(() => {
     fetchBoardData(); // Initial fetch
 
-    const socket = io("http://localhost:3001");
+    const socket = io(API_URL);
     socket.emit("join_workspace", workspaceSlug);
     socket.on("board_updated", () => {
       fetchBoardData(); // Re-fetch on updates from other users
@@ -127,7 +129,7 @@ function TaskBoardPage() {
 
       // Call the API to save the change
       await axios.patch(
-        `http://localhost:3001/api/workspaces/tasks/${taskId}`,
+        `${API_URL}/api/workspaces/tasks/${taskId}`,
         { content: newContent, workspaceSlug },
         { headers: getAuthHeader() }
       );
@@ -216,7 +218,7 @@ function TaskBoardPage() {
     // 4. Call the API with the correct data
     axios
       .patch(
-        `http://localhost:3001/api/workspaces/board/positions`,
+        `${API_URL}/api/workspaces/board/positions`,
         { lists: listsPayload, workspaceSlug },
         { headers: getAuthHeader() }
       )
@@ -244,7 +246,7 @@ function TaskBoardPage() {
 
     // API Call
     axios
-      .delete(`http://localhost:3001/api/workspaces/lists/${listId}`, {
+      .delete(`${API_URL}/api/workspaces/lists/${listId}`, {
         headers: getAuthHeader(),
         data: { workspaceSlug },
       })
