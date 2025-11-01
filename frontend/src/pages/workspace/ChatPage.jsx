@@ -12,6 +12,9 @@ function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [user, setUser] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState(null);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
 
@@ -25,37 +28,104 @@ function ChatPage() {
     const session = JSON.parse(localStorage.getItem("session"));
     if (session?.user) {
       setUser(session.user);
+    } else {
+      console.error("❌ No user session found");
+      setError("Please log in to access chat");
+      return;
     }
 
-    // Create socket connection
-    socketRef.current = io(API_URL);
-    const socket = socketRef.current;
+    console.log("🔌 [CHAT] Initializing Socket.IO connection...");
+    console.log(`   API_URL: ${API_URL}`);
+    console.log(`   Workspace: ${workspaceSlug}`);
+
+    // ✅ Create socket connection with proper config
+    const socket = io(API_URL, {
+      transports: ["websocket", "polling"],
+      upgrade: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+      withCredentials: false,
+    });
+
+    socketRef.current = socket;
 
     // Fetch initial messages
     const fetchMessages = async () => {
       try {
+        console.log("📥 [CHAT] Fetching initial messages...");
         const { data } = await axios.get(
           `${API_URL}/api/workspaces/${workspaceSlug}/messages`,
           { headers: getAuthHeader() }
         );
+        console.log(`✅ [CHAT] Loaded ${data.length} messages`);
         setMessages(data);
+        setError(null);
       } catch (error) {
-        console.error("Failed to fetch messages:", error);
+        console.error("❌ [CHAT] Failed to fetch messages:", error);
+        setError("Failed to load messages. Please refresh the page.");
       }
     };
     fetchMessages();
 
-    // Join workspace room
-    socket.emit("join_workspace", workspaceSlug);
+    // Socket event handlers
+    socket.on("connect", () => {
+      console.log("✅ [CHAT] Socket connected:", socket.id);
+      setIsConnected(true);
+      setError(null);
+
+      // Join workspace room
+      socket.emit("join_workspace", workspaceSlug);
+      console.log(`📂 [CHAT] Joined workspace room: ${workspaceSlug}`);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("❌ [CHAT] Socket disconnected:", reason);
+      setIsConnected(false);
+      if (reason === "io server disconnect") {
+        // Server disconnected, try to reconnect
+        socket.connect();
+      }
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("❌ [CHAT] Connection error:", err);
+      setIsConnected(false);
+      setError("Connection error. Retrying...");
+    });
+
+    socket.on("reconnect", (attemptNumber) => {
+      console.log("🔄 [CHAT] Reconnected after", attemptNumber, "attempts");
+      setIsConnected(true);
+      setError(null);
+      // Re-join workspace room
+      socket.emit("join_workspace", workspaceSlug);
+    });
 
     // Listen for new messages
     socket.on("new_message", (message) => {
+      console.log("💬 [CHAT] New message received:", message.id);
       setMessages((prevMessages) => [...prevMessages, message]);
+    });
+
+    // Listen for message errors
+    socket.on("message_error", ({ error: errMsg }) => {
+      console.error("❌ [CHAT] Message error:", errMsg);
+      setError(errMsg);
+      setIsSending(false);
     });
 
     // Cleanup
     return () => {
+      console.log("🧹 [CHAT] Cleaning up socket connection");
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("connect_error");
+      socket.off("reconnect");
       socket.off("new_message");
+      socket.off("message_error");
       socket.disconnect();
     };
   }, [workspaceSlug]);
@@ -69,14 +139,51 @@ function ChatPage() {
 
   const handleSendMessage = (e) => {
     e.preventDefault();
-    if (newMessage.trim() && user && socketRef.current) {
-      socketRef.current.emit("send_message", {
-        content: newMessage,
-        workspaceSlug: workspaceSlug,
-        userId: user.id,
-        userName: user.user_metadata?.display_name || user.email.split("@")[0],
-      });
+
+    if (!newMessage.trim()) {
+      console.log("⚠️ [CHAT] Empty message, not sending");
+      return;
+    }
+
+    if (!user) {
+      console.error("❌ [CHAT] No user found");
+      setError("Please log in to send messages");
+      return;
+    }
+
+    if (!socketRef.current || !isConnected) {
+      console.error("❌ [CHAT] Socket not connected");
+      setError("Not connected to chat server. Please wait...");
+      return;
+    }
+
+    setIsSending(true);
+    setError(null);
+
+    const messageData = {
+      content: newMessage.trim(),
+      workspaceSlug: workspaceSlug,
+      userId: user.id,
+    };
+
+    console.log("📤 [CHAT] Sending message:", messageData);
+
+    try {
+      socketRef.current.emit("send_message", messageData);
       setNewMessage("");
+      setIsSending(false);
+
+      // Set a timeout to show error if message not received
+      setTimeout(() => {
+        if (isSending) {
+          setError("Message taking too long to send. Please try again.");
+          setIsSending(false);
+        }
+      }, 5000);
+    } catch (err) {
+      console.error("❌ [CHAT] Error sending message:", err);
+      setError("Failed to send message. Please try again.");
+      setIsSending(false);
     }
   };
 
@@ -97,17 +204,56 @@ function ChatPage() {
           </h1>
         </div>
         <div className="ml-4 flex items-center gap-2">
-          <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-          <p className="text-sm text-slate-400">
-            Real-time messaging for your workspace
-          </p>
+          {isConnected ? (
+            <>
+              <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              <p className="text-sm text-slate-400">
+                Real-time messaging for your workspace
+              </p>
+            </>
+          ) : (
+            <>
+              <span className="inline-block w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
+              <p className="text-sm text-yellow-400">
+                Connecting to chat server...
+              </p>
+            </>
+          )}
         </div>
       </header>
+
+      {/* Error banner */}
+      {error && (
+        <div className="relative bg-red-500/10 border-l-4 border-red-500 p-4 m-4 rounded">
+          <div className="flex items-center gap-3">
+            <svg
+              className="w-5 h-5 text-red-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <p className="text-sm text-red-300">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="ml-auto text-red-300 hover:text-red-100"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 relative overflow-hidden min-h-0">
         <div className="absolute inset-0 overflow-auto custom-scrollbar p-6 space-y-4">
-          {/* Call Banner - Shows prominently when call is active */}
+          {/* Call Banner */}
           <InlineCallBanner />
 
           {messages.length === 0 ? (
@@ -219,30 +365,60 @@ function ChatPage() {
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type your message..."
-              className="w-full px-5 py-3.5 bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 rounded-xl text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 focus:outline-none transition-all duration-200 shadow-lg"
+              placeholder={
+                isConnected ? "Type your message..." : "Connecting to chat..."
+              }
+              disabled={!isConnected || isSending}
+              className="w-full px-5 py-3.5 bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 rounded-xl text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 focus:outline-none transition-all duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
               autoComplete="off"
             />
           </div>
           <button
             type="submit"
-            disabled={!newMessage.trim()}
+            disabled={!newMessage.trim() || !isConnected || isSending}
             className="group relative bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white font-semibold px-8 py-3.5 rounded-xl transition-all duration-200 shadow-lg hover:shadow-cyan-500/25 disabled:shadow-none flex items-center gap-2"
           >
-            <span>Send</span>
-            <svg
-              className="w-5 h-5 transform group-hover:translate-x-1 transition-transform"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 7l5 5m0 0l-5 5m5-5H6"
-              />
-            </svg>
+            {isSending ? (
+              <>
+                <svg
+                  className="animate-spin w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span>Sending...</span>
+              </>
+            ) : (
+              <>
+                <span>Send</span>
+                <svg
+                  className="w-5 h-5 transform group-hover:translate-x-1 transition-transform"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 7l5 5m0 0l-5 5m5-5H6"
+                  />
+                </svg>
+              </>
+            )}
           </button>
         </form>
       </footer>

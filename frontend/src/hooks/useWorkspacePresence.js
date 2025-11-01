@@ -27,11 +27,17 @@ export function useWorkspacePresence(workspaceSlug) {
       `🔌 [PRESENCE HOOK] Initializing socket for workspace: ${workspaceSlug}, user: ${userName}`
     );
 
-    // Create socket instance
+    // ✅ CRITICAL FIX: Use WebSocket transport first for better production compatibility
     const socketInstance = io(API_URL, {
+      transports: ["websocket", "polling"],
+      upgrade: true,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+      // Add CORS support
+      withCredentials: false,
     });
 
     socketRef.current = socketInstance;

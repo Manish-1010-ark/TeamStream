@@ -7,12 +7,6 @@ const API_URL = import.meta.env.VITE_API_URL;
 /**
  * Custom hook to manage Socket.IO connection and video call signaling
  * Supports multi-call system with call IDs
- *
- * @param {string} workspaceSlug - Current workspace identifier
- * @param {string} userId - Current user's ID
- * @param {string} userName - Current user's display name
- * @param {string|null} callId - Specific call ID to join (null for lobby)
- * @returns {Object} Socket state, participants, calls list, and control functions
  */
 function useSocketSignaling(workspaceSlug, userId, userName, callId = null) {
   const [isConnected, setIsConnected] = useState(false);
@@ -35,9 +29,17 @@ function useSocketSignaling(workspaceSlug, userId, userName, callId = null) {
   useEffect(() => {
     console.log("🔌 [SOCKET] Initializing Socket.IO connection...");
 
-    // Create socket connection
+    // ✅ CRITICAL FIX: Use WebSocket transport first, then polling as fallback
     const socket = io(API_URL, {
       transports: ["websocket", "polling"],
+      upgrade: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      timeout: 10000,
+      // Add CORS support
+      withCredentials: false,
     });
 
     socketRef.current = socket;
@@ -50,7 +52,7 @@ function useSocketSignaling(workspaceSlug, userId, userName, callId = null) {
       // Auto-join workspace room for lobby updates
       if (workspaceSlug) {
         socket.emit("join_workspace", workspaceSlug);
-        console.log(`📍 [SOCKET] Joined workspace room: ${workspaceSlug}`);
+        console.log(`📂 [SOCKET] Joined workspace room: ${workspaceSlug}`);
       }
     });
 
