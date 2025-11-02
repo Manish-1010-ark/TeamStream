@@ -1,4 +1,5 @@
 // frontend/src/pages/workspace/TaskBoardPage.jsx
+// This is Part 1 - Complete file continues in comments due to length
 import React, { useState, useEffect, createContext, useContext } from "react";
 import axios from "axios";
 import { Link, useParams } from "react-router-dom";
@@ -10,13 +11,12 @@ import {
   DragOverlay,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
-import io from "socket.io-client"; // This import was missing
+import io from "socket.io-client";
 
-import { CreateListForm } from "../../components/CreateListForm";
-import { EditTaskModal } from "../../components/EditTaskModal"; // Import the modal
-
-import { List } from "../../components/List";
-import { Task } from "../../components/Task";
+import { CreateListForm } from "../../components/taskboard/CreateListForm";
+import { EditTaskModal } from "../../components/taskboard/EditTaskModal";
+import { List } from "../../components/taskboard/List";
+import { Task } from "../../components/taskboard/Task";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -26,7 +26,7 @@ function TaskBoardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
-  const [activeTask, setActiveTask] = useState(null); // For DragOverlay
+  const [activeTask, setActiveTask] = useState(null);
 
   const getAuthHeader = () => {
     const session = JSON.parse(localStorage.getItem("session"));
@@ -34,10 +34,9 @@ function TaskBoardPage() {
   };
 
   const fetchBoardData = async () => {
-    // No setLoading(true) here to allow for silent background refetches
     try {
       const { data } = await axios.get(
-        `${API_URL}/api/workspaces/boards/${boardId}`, // Use boardId here
+        `${API_URL}/api/workspaces/boards/${boardId}`,
         { headers: getAuthHeader() }
       );
       setBoardData(data);
@@ -45,12 +44,10 @@ function TaskBoardPage() {
       setError("Failed to load the board.");
       console.error(err);
     } finally {
-      // Only set initial loading to false
       if (loading) setLoading(false);
     }
   };
 
-  // This function adds the new list to our local state
   const handleListCreated = (newList) => {
     setBoardData((prevBoard) => ({
       ...prevBoard,
@@ -59,11 +56,9 @@ function TaskBoardPage() {
   };
 
   const handleDeleteTask = (taskId) => {
-    // Ask for confirmation before deleting
     if (!window.confirm("Are you sure you want to delete this task?")) return;
 
     const oldBoard = boardData;
-    // Optimistically remove the task from the UI
     setBoardData((prev) => {
       const newLists = prev.lists.map((list) => ({
         ...list,
@@ -72,30 +67,24 @@ function TaskBoardPage() {
       return { ...prev, lists: newLists };
     });
 
-    // Call the API to delete the task from the database
     axios
-      .delete(
-        `${API_URL}/api/workspaces/tasks/${taskId}`,
-        // DELETE requests need to pass body data in a `data` property
-        {
-          headers: getAuthHeader(),
-          data: { workspaceSlug },
-        }
-      )
+      .delete(`${API_URL}/api/workspaces/tasks/${taskId}`, {
+        headers: getAuthHeader(),
+        data: { workspaceSlug },
+      })
       .catch((err) => {
         console.error("Failed to delete task", err);
-        // Revert UI on error
         setBoardData(oldBoard);
       });
   };
 
   useEffect(() => {
-    fetchBoardData(); // Initial fetch
+    fetchBoardData();
 
     const socket = io(API_URL);
     socket.emit("join_workspace", workspaceSlug);
     socket.on("board_updated", () => {
-      fetchBoardData(); // Re-fetch on updates from other users
+      fetchBoardData();
     });
 
     return () => {
@@ -113,7 +102,6 @@ function TaskBoardPage() {
 
   const handleSaveTask = async (taskId, newContent) => {
     try {
-      // Optimistically update the UI
       setBoardData((prev) => {
         const newLists = prev.lists.map((list) => ({
           ...list,
@@ -124,10 +112,8 @@ function TaskBoardPage() {
         return { ...prev, lists: newLists };
       });
 
-      // Close the modal
       handleCloseModal();
 
-      // Call the API to save the change
       await axios.patch(
         `${API_URL}/api/workspaces/tasks/${taskId}`,
         { content: newContent, workspaceSlug },
@@ -135,7 +121,6 @@ function TaskBoardPage() {
       );
     } catch (error) {
       console.error("Failed to save task", error);
-      // Optional: Add logic to revert the change on error
     }
   };
 
@@ -145,7 +130,6 @@ function TaskBoardPage() {
     })
   );
 
-  // 4. Create an onDragStart handler to set the active task
   const onDragStart = (event) => {
     const { active } = event;
     const task = boardData.lists
@@ -161,9 +145,7 @@ function TaskBoardPage() {
       return;
     }
 
-    const oldBoard = boardData; // Keep a copy for error recovery
-
-    // 1. First, calculate the new board state synchronously
+    const oldBoard = boardData;
     let newBoard = boardData;
     const activeList = boardData.lists.find((l) =>
       l.tasks.some((t) => t.id === active.id)
@@ -174,7 +156,6 @@ function TaskBoardPage() {
 
     if (activeList && overList) {
       if (activeList.id === overList.id) {
-        // Reordering in the same list
         const oldIndex = activeList.tasks.findIndex((t) => t.id === active.id);
         const newIndex = overList.tasks.findIndex((t) => t.id === over.id);
         const updatedTasks = arrayMove(activeList.tasks, oldIndex, newIndex);
@@ -183,7 +164,6 @@ function TaskBoardPage() {
         );
         newBoard = { ...boardData, lists: updatedLists };
       } else {
-        // Moving to a different list
         let draggedTask;
         const sourceListTasks = activeList.tasks.filter((task) => {
           if (task.id === active.id) {
@@ -206,16 +186,13 @@ function TaskBoardPage() {
       }
     }
 
-    // 2. Set the state for the optimistic UI update
     setBoardData(newBoard);
 
-    // 3. Prepare the payload from the correctly calculated new state
     const listsPayload = newBoard.lists.map((list) => ({
       id: list.id,
       tasks: list.tasks.map((task) => task.id),
     }));
 
-    // 4. Call the API with the correct data
     axios
       .patch(
         `${API_URL}/api/workspaces/board/positions`,
@@ -224,11 +201,10 @@ function TaskBoardPage() {
       )
       .catch((err) => {
         console.error("Failed to save board state:", err);
-        setBoardData(oldBoard); // Revert on error
+        setBoardData(oldBoard);
       });
   };
 
-  // Also add this function for deleting lists
   const handleDeleteList = (listId) => {
     if (
       !window.confirm(
@@ -238,13 +214,11 @@ function TaskBoardPage() {
       return;
 
     const oldBoard = boardData;
-    // Optimistic UI update
     setBoardData((prev) => ({
       ...prev,
       lists: prev.lists.filter((list) => list.id !== listId),
     }));
 
-    // API Call
     axios
       .delete(`${API_URL}/api/workspaces/lists/${listId}`, {
         headers: getAuthHeader(),
@@ -252,16 +226,14 @@ function TaskBoardPage() {
       })
       .catch((err) => {
         console.error("Failed to delete list:", err);
-        setBoardData(oldBoard); // Revert on error
+        setBoardData(oldBoard);
       });
   };
 
-  // Add this function back into TaskBoardPage.jsx
   const handleTaskCreated = (newTask) => {
     setBoardData((prevBoard) => {
       const updatedLists = prevBoard.lists.map((list) => {
         if (list.id === newTask.list_id) {
-          // Add the new task to the end of the correct list
           return { ...list, tasks: [...list.tasks, newTask] };
         }
         return list;
@@ -270,10 +242,8 @@ function TaskBoardPage() {
     });
   };
 
-  // Also add this function for updating list titles
   const handleUpdateListTitle = (listId, newTitle) => {
     const oldBoard = boardData;
-    // Optimistic UI update
     setBoardData((prev) => ({
       ...prev,
       lists: prev.lists.map((list) =>
@@ -281,7 +251,6 @@ function TaskBoardPage() {
       ),
     }));
 
-    // API Call
     axios
       .patch(
         `${API_URL}/api/workspaces/lists/${listId}`,
@@ -290,13 +259,13 @@ function TaskBoardPage() {
       )
       .catch((err) => {
         console.error("Failed to update list title:", err);
-        setBoardData(oldBoard); // Revert on error
+        setBoardData(oldBoard);
       });
   };
 
   if (loading) {
     return (
-      <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+      <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-slate-300 text-lg font-medium">Loading Board...</p>
@@ -307,7 +276,7 @@ function TaskBoardPage() {
 
   if (error) {
     return (
-      <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
         <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-8 max-w-md">
           <div className="flex items-center gap-3 mb-2">
             <svg
@@ -333,22 +302,19 @@ function TaskBoardPage() {
 
   return (
     <>
-      {/* 6. Update DndContext with the new handlers */}
       <DndContext
         sensors={sensors}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
-        <div className="h-full p-6 flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-          {/* Header - will not grow */}
+        <div className="h-full p-6 flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+          {/* Header */}
           <header className="mb-8 animate-fade-in flex-shrink-0">
             <Link
               to={`/workspace/${workspaceSlug}/tasks`}
               className="w-28 h-10 rounded-lg bg-slate-800 text-slate-300 font-semibold relative group flex items-center justify-center mb-4 transition-transform duration-200 hover:scale-105 overflow-hidden"
             >
-              {/* Expanding cyan background */}
               <div className="bg-cyan-500 rounded-md h-8 w-8 flex items-center justify-center absolute left-1 top-1 group-hover:w-[calc(100%-8px)] z-6 transition-all duration-500">
-                {/* Left arrow icon */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 1024 1024"
@@ -361,9 +327,7 @@ function TaskBoardPage() {
                   <path d="m237.248 512 265.408 265.344a32 32 0 0 1-45.312 45.312l-288-288a32 32 0 0 1 0-45.312l288-288a32 32 0 1 1 45.312 45.312L237.248 512z" />
                 </svg>
               </div>
-
-              {/* Text label — hides on hover */}
-              <p className="z-20 pl-8  group-hover:opacity-0 duration-300 group-hover:-translate-x-8 ">
+              <p className="z-20 pl-8 group-hover:opacity-0 duration-300 group-hover:-translate-x-8">
                 Go Back
               </p>
             </Link>
@@ -375,11 +339,11 @@ function TaskBoardPage() {
             </div>
             <p className="text-slate-400 text-base ml-4 flex items-center gap-2">
               <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              Real-time taskboard — where teams push work forward
+              Real-time taskboard – where teams push work forward
             </p>
           </header>
 
-          {/* FIX: Board Container - will now grow to fill remaining space */}
+          {/* Board Container */}
           <div className="flex-1 overflow-x-auto pb-4 custom-scrollbar">
             <div className="flex items-start gap-5 min-w-max h-full">
               {boardData?.lists.map((list, index) => (
@@ -394,7 +358,6 @@ function TaskBoardPage() {
                     onTaskCreated={handleTaskCreated}
                     onTaskClick={handleTaskClick}
                     onDeleteTask={handleDeleteTask}
-                    // Add these two new props
                     onUpdateListTitle={handleUpdateListTitle}
                     onDeleteList={handleDeleteList}
                   />
@@ -415,7 +378,6 @@ function TaskBoardPage() {
             </div>
           </div>
         </div>
-        {/* 7. Add the DragOverlay component */}
         <DragOverlay>
           {activeTask ? (
             <div className="opacity-50">

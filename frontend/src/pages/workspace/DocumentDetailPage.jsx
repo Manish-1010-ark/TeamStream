@@ -1,13 +1,13 @@
 // frontend/src/pages/workspace/DocumentDetailPage.jsx
 import React from "react";
 import { useParams, Link } from "react-router-dom";
-import CollaborativeEditorWrapper from "../../components/CollaborativeEditor";
+import CollaborativeEditorWrapper from "../../components/documenteditor/CollaborativeEditor";
 
 function DocumentDetailPage() {
   const { workspaceSlug, documentId } = useParams();
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Background decoration */}
       <div className="absolute inset-0 opacity-5 pointer-events-none">
         <div className="absolute top-20 right-20 w-96 h-96 bg-cyan-500 rounded-full blur-3xl"></div>
@@ -46,7 +46,6 @@ function DocumentDetailPage() {
       {/* Editor Container */}
       <div className="flex-1 relative overflow-hidden">
         <div className="absolute inset-0 bg-slate-100 text-slate-900 overflow-auto">
-          {/* The Collaborative Editor will live here */}
           <CollaborativeEditorWrapper documentId={documentId} />
         </div>
       </div>

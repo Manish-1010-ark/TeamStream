@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { LiveblocksProvider } from "@liveblocks/react";
 
+import LandingPage from "./pages/LandingPage";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -55,6 +56,9 @@ function App() {
         }}
       >
         <Routes>
+          {/* Landing Page */}
+          <Route path="/" element={<LandingPage />} />
+
           {/* Authentication Routes */}
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
@@ -80,9 +84,6 @@ function App() {
             <Route path="info" element={<WorkspaceInfoPage />} />
             <Route index element={<Navigate to="chat" replace />} />
           </Route>
-
-          {/* Root redirect */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
       </LiveblocksProvider>
     </Router>

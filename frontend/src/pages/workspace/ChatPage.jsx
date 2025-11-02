@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import io from "socket.io-client";
 import axios from "axios";
-import InlineCallBanner from "../../components/InlineCallBanner";
+import InlineCallBanner from "../../components/videocall/InlineCallBanner";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -38,7 +38,6 @@ function ChatPage() {
     console.log(`   API_URL: ${API_URL}`);
     console.log(`   Workspace: ${workspaceSlug}`);
 
-    // ✅ Create socket connection with proper config
     const socket = io(API_URL, {
       transports: ["websocket", "polling"],
       upgrade: true,
@@ -75,8 +74,6 @@ function ChatPage() {
       console.log("✅ [CHAT] Socket connected:", socket.id);
       setIsConnected(true);
       setError(null);
-
-      // Join workspace room
       socket.emit("join_workspace", workspaceSlug);
       console.log(`📂 [CHAT] Joined workspace room: ${workspaceSlug}`);
     });
@@ -85,7 +82,6 @@ function ChatPage() {
       console.log("❌ [CHAT] Socket disconnected:", reason);
       setIsConnected(false);
       if (reason === "io server disconnect") {
-        // Server disconnected, try to reconnect
         socket.connect();
       }
     });
@@ -100,24 +96,20 @@ function ChatPage() {
       console.log("🔄 [CHAT] Reconnected after", attemptNumber, "attempts");
       setIsConnected(true);
       setError(null);
-      // Re-join workspace room
       socket.emit("join_workspace", workspaceSlug);
     });
 
-    // Listen for new messages
     socket.on("new_message", (message) => {
       console.log("💬 [CHAT] New message received:", message.id);
       setMessages((prevMessages) => [...prevMessages, message]);
     });
 
-    // Listen for message errors
     socket.on("message_error", ({ error: errMsg }) => {
       console.error("❌ [CHAT] Message error:", errMsg);
       setError(errMsg);
       setIsSending(false);
     });
 
-    // Cleanup
     return () => {
       console.log("🧹 [CHAT] Cleaning up socket connection");
       socket.off("connect");
@@ -130,7 +122,6 @@ function ChatPage() {
     };
   }, [workspaceSlug]);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -173,7 +164,6 @@ function ChatPage() {
       setNewMessage("");
       setIsSending(false);
 
-      // Set a timeout to show error if message not received
       setTimeout(() => {
         if (isSending) {
           setError("Message taking too long to send. Please try again.");
@@ -196,10 +186,10 @@ function ChatPage() {
       </div>
 
       {/* Header */}
-      <header className="relative p-6 border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30 flex-shrink-0 z-10 overflow-hidden">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-1 h-7 bg-gradient-to-b from-cyan-500 to-blue-500 rounded-full"></div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+      <header className="relative p-6 border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30 flex-shrink-0 z-10">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-1 h-8 bg-gradient-to-b from-cyan-500 to-blue-500 rounded-full"></div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
             Team Chat
           </h1>
         </div>
@@ -207,14 +197,14 @@ function ChatPage() {
           {isConnected ? (
             <>
               <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              <p className="text-sm text-slate-400">
+              <p className="text-slate-400 text-base">
                 Real-time messaging for your workspace
               </p>
             </>
           ) : (
             <>
               <span className="inline-block w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
-              <p className="text-sm text-yellow-400">
+              <p className="text-yellow-400 text-base">
                 Connecting to chat server...
               </p>
             </>
@@ -224,10 +214,10 @@ function ChatPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="relative bg-red-500/10 border-l-4 border-red-500 p-4 m-4 rounded">
+        <div className="relative bg-red-500/10 border-l-4 border-red-500 p-4 m-4 rounded-lg animate-fade-in">
           <div className="flex items-center gap-3">
             <svg
-              className="w-5 h-5 text-red-500"
+              className="w-5 h-5 text-red-500 flex-shrink-0"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -239,10 +229,10 @@ function ChatPage() {
                 d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
-            <p className="text-sm text-red-300">{error}</p>
+            <p className="text-sm text-red-300 flex-1">{error}</p>
             <button
               onClick={() => setError(null)}
-              className="ml-auto text-red-300 hover:text-red-100"
+              className="text-red-300 hover:text-red-100 transition-colors"
             >
               ×
             </button>
@@ -257,22 +247,28 @@ function ChatPage() {
           <InlineCallBanner />
 
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center opacity-50">
-              <svg
-                className="w-16 h-16 text-slate-600 mb-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                />
-              </svg>
-              <p className="text-slate-500 text-lg">No messages yet</p>
-              <p className="text-slate-600 text-sm">Start the conversation!</p>
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="w-20 h-20 rounded-full bg-slate-800/50 flex items-center justify-center mb-4">
+                <svg
+                  className="w-10 h-10 text-slate-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-slate-300 mb-2">
+                No messages yet
+              </h3>
+              <p className="text-slate-500 text-sm">
+                Start the conversation with your team!
+              </p>
             </div>
           ) : (
             messages.map((msg, index) => {
@@ -309,21 +305,21 @@ function ChatPage() {
                       </p>
                     )}
                     <div
-                      className={`group relative p-4 rounded-2xl shadow-lg transition-all duration-200 hover:shadow-xl ${
+                      className={`group relative p-4 rounded-2xl shadow-lg transition-all duration-200 ${
                         isOwnMessage
-                          ? "bg-gradient-to-br from-cyan-600 to-cyan-700 rounded-br-md hover:from-cyan-500 hover:to-cyan-600"
-                          : "bg-slate-800/80 backdrop-blur-sm rounded-bl-md hover:bg-slate-800 border border-slate-700/50"
+                          ? "bg-gradient-to-br from-cyan-600 to-cyan-700 rounded-br-md hover:from-cyan-500 hover:to-cyan-600 hover:shadow-xl hover:shadow-cyan-500/10"
+                          : "bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 rounded-bl-md hover:bg-slate-800 hover:border-slate-600 hover:shadow-xl"
                       }`}
                     >
                       <p className="text-slate-50 whitespace-pre-wrap leading-relaxed">
                         {msg.content}
                       </p>
                       <div
-                        className={`flex items-center gap-1 mt-2 ${
+                        className={`flex items-center gap-1 mt-2 opacity-70 group-hover:opacity-100 transition-opacity ${
                           isOwnMessage ? "justify-end" : "justify-start"
                         }`}
                       >
-                        <p className="text-xs text-slate-400 opacity-70 group-hover:opacity-100 transition-opacity">
+                        <p className="text-xs text-slate-400">
                           {new Date(msg.created_at).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit",
@@ -331,7 +327,7 @@ function ChatPage() {
                         </p>
                         {isOwnMessage && (
                           <svg
-                            className="w-4 h-4 text-cyan-300 opacity-70"
+                            className="w-4 h-4 text-cyan-300"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
@@ -369,7 +365,7 @@ function ChatPage() {
                 isConnected ? "Type your message..." : "Connecting to chat..."
               }
               disabled={!isConnected || isSending}
-              className="w-full px-5 py-3.5 bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 rounded-xl text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 focus:outline-none transition-all duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-5 py-3.5 bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 rounded-xl text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 focus:outline-none transition-all duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:border-slate-600"
               autoComplete="off"
             />
           </div>
@@ -442,6 +438,10 @@ function ChatPage() {
             opacity: 1;
             transform: translateY(0);
           }
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
         }
 
         .animate-message-in {

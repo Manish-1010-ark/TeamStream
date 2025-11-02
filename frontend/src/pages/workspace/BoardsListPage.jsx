@@ -66,9 +66,7 @@ function BoardsListPage() {
     }
   };
 
-  // NEW: Handler function for deleting a board
   const handleDeleteBoard = async (e, boardId) => {
-    // Stop the <Link> from navigating when the delete button is clicked
     e.preventDefault();
     e.stopPropagation();
 
@@ -80,7 +78,6 @@ function BoardsListPage() {
       return;
     }
 
-    // Optimistic UI update: remove the board from the list immediately
     const originalBoards = [...boards];
     setBoards(boards.filter((board) => board.id !== boardId));
 
@@ -91,13 +88,13 @@ function BoardsListPage() {
     } catch (error) {
       console.error("Failed to delete board:", error);
       setError("Failed to delete the board. Please try again.");
-      setBoards(originalBoards); // Revert the UI on error
+      setBoards(originalBoards);
     }
   };
 
   if (loading) {
     return (
-      <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+      <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-slate-300 text-lg font-medium">
@@ -110,7 +107,7 @@ function BoardsListPage() {
 
   if (error && boards.length === 0) {
     return (
-      <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
         <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-8 max-w-md">
           <div className="flex items-center gap-3 mb-2">
             <svg
@@ -141,7 +138,7 @@ function BoardsListPage() {
   }
 
   return (
-    <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-auto custom-scrollbar">
+    <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-auto custom-scrollbar">
       {/* Background decoration */}
       <div className="absolute inset-0 opacity-5 pointer-events-none">
         <div className="absolute top-20 right-20 w-96 h-96 bg-cyan-500 rounded-full blur-3xl"></div>
@@ -193,10 +190,10 @@ function BoardsListPage() {
                 className="group relative block p-6 bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 rounded-xl hover:bg-slate-800 hover:border-cyan-500/50 transition-all duration-200 shadow-lg hover:shadow-cyan-500/20 animate-slide-in overflow-hidden"
                 style={{ animationDelay: `${index * 0.05}s` }}
               >
-                {/* NEW: Delete button */}
+                {/* Delete button */}
                 <button
                   onClick={(e) => handleDeleteBoard(e, board.id)}
-                  className="absolute top-6 right-3 p-1.5 bg-slate-700/50 hover:bg-red-500/80 rounded-full text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all z-10 "
+                  className="absolute top-4 right-4 p-1.5 bg-slate-700/50 hover:bg-red-500/80 rounded-full text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
                   aria-label="Delete board"
                 >
                   <svg
@@ -213,14 +210,15 @@ function BoardsListPage() {
                     />
                   </svg>
                 </button>
+
                 {/* Card decoration */}
                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 rounded-full blur-2xl transform translate-x-16 -translate-y-16 group-hover:scale-150 transition-transform duration-500"></div>
 
                 <div className="relative">
                   <div className="flex items-start justify-between mb-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg ring-2 ring-cyan-500/20 group-hover:ring-cyan-500/40 transition-all ">
+                    <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg ring-2 ring-cyan-500/20 group-hover:ring-cyan-500/40 transition-all">
                       <svg
-                        className="w-6 h-6 text-white "
+                        className="w-6 h-6 text-white"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -305,7 +303,7 @@ function BoardsListPage() {
                 value={newBoardTitle}
                 onChange={(e) => setNewBoardTitle(e.target.value)}
                 placeholder="Enter board title..."
-                className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 focus:outline-none transition-all"
+                className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 focus:outline-none transition-all hover:border-slate-600"
                 disabled={isSubmitting}
               />
             </div>

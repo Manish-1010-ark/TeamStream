@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import CopyButton from "../../components/CopyButton";
-import { useWorkspacePresence } from "../../hooks/useWorkspacePresence"; // Import the hook
+import { useWorkspacePresence } from "../../hooks/useWorkspacePresence";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -15,7 +15,6 @@ function WorkspaceInfoPage() {
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
 
-  // Use the custom hook - replaces all socket state and logic
   const { onlineUsers, isUserOnline, isConnected, currentUserId } =
     useWorkspacePresence(workspaceSlug);
 
@@ -24,7 +23,6 @@ function WorkspaceInfoPage() {
     return { Authorization: `Bearer ${session?.access_token}` };
   };
 
-  // Handle leave workspace
   const handleLeaveWorkspace = async () => {
     const confirmation = window.confirm(
       `Are you sure you want to leave "${workspace?.name}"?\n\nThis action is irreversible. You will need to be re-invited to rejoin this workspace.`
@@ -39,10 +37,7 @@ function WorkspaceInfoPage() {
         headers
       );
 
-      // Show success message
       alert(`You have successfully left "${workspace?.name}"`);
-
-      // Navigate back to dashboard
       navigate("/dashboard");
     } catch (error) {
       console.error("Failed to leave workspace:", error);
@@ -61,7 +56,6 @@ function WorkspaceInfoPage() {
     }
   };
 
-  // Format date helper
   const formatDate = (dateString) => {
     if (!dateString) return "Unknown";
     const date = new Date(dateString);
@@ -91,53 +85,6 @@ function WorkspaceInfoPage() {
         setWorkspace(wsRes.data);
         setMembers(membersRes.data);
 
-        // Check if current user is the owner
-        if (userId && wsRes.data.owner_id === userId) {
-          setIsOwner(true);
-        }
-      } catch (error) {
-        console.error("Failed to fetch workspace info:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [workspaceSlug]);
-
-  // Keep your existing fetchMembers function
-  const fetchMembers = async () => {
-    try {
-      const headers = { headers: getAuthHeader() };
-      const membersRes = await axios.get(
-        `${API_URL}/api/workspaces/${workspaceSlug}/members`,
-        headers
-      );
-      setMembers(membersRes.data);
-    } catch (error) {
-      console.error("Failed to fetch members:", error);
-    }
-  };
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const session = JSON.parse(localStorage.getItem("session"));
-        const userId = session?.user?.id;
-
-        const headers = { headers: getAuthHeader() };
-        const [wsRes, membersRes] = await Promise.all([
-          axios.get(`${API_URL}/api/workspaces/${workspaceSlug}`, headers),
-          axios.get(
-            `${API_URL}/api/workspaces/${workspaceSlug}/members`,
-            headers
-          ),
-        ]);
-
-        setWorkspace(wsRes.data);
-        setMembers(membersRes.data);
-
-        // Check if current user is the owner
         if (userId && wsRes.data.owner_id === userId) {
           setIsOwner(true);
         }
@@ -152,7 +99,7 @@ function WorkspaceInfoPage() {
 
   if (loading) {
     return (
-      <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+      <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-slate-300 text-lg font-medium">
@@ -165,7 +112,7 @@ function WorkspaceInfoPage() {
 
   if (!workspace) {
     return (
-      <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
         <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-8 max-w-md">
           <p className="text-red-300">Could not load workspace.</p>
         </div>
@@ -174,8 +121,14 @@ function WorkspaceInfoPage() {
   }
 
   return (
-    <div className="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-y-auto">
-      <div className="max-w-4xl mx-auto p-8">
+    <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto">
+      {/* Background decoration */}
+      <div className="absolute inset-0 opacity-5 pointer-events-none">
+        <div className="absolute top-20 right-20 w-96 h-96 bg-cyan-500 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 left-20 w-96 h-96 bg-blue-500 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="relative max-w-4xl mx-auto p-8">
         {/* Header */}
         <header className="mb-8 animate-fade-in">
           <div className="flex items-center justify-between mb-2">
@@ -186,7 +139,7 @@ function WorkspaceInfoPage() {
               </h1>
             </div>
 
-            {/* Leave Workspace Button (only if not owner) */}
+            {/* Leave Workspace Button */}
             {!isOwner && (
               <button
                 onClick={handleLeaveWorkspace}
@@ -215,7 +168,7 @@ function WorkspaceInfoPage() {
         </header>
 
         {/* Workspace Details Card */}
-        <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl border border-slate-700/50 mb-6 shadow-lg hover:shadow-xl transition-shadow">
+        <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl border border-slate-700/50 mb-6 shadow-lg hover:shadow-xl transition-shadow animate-fade-in">
           <h2 className="text-xl font-semibold text-cyan-400 mb-4 flex items-center gap-2">
             <svg
               className="w-5 h-5"
@@ -234,7 +187,7 @@ function WorkspaceInfoPage() {
           </h2>
           <div className="space-y-3 text-sm">
             {/* Owner Information */}
-            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg">
+            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg hover:bg-slate-700/40 transition-colors">
               <span className="text-slate-400 font-medium">Created by:</span>
               <span className="text-slate-200 font-semibold">
                 {workspace.owner_name}
@@ -247,7 +200,7 @@ function WorkspaceInfoPage() {
             </div>
 
             {/* Creation Date */}
-            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg">
+            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg hover:bg-slate-700/40 transition-colors">
               <span className="text-slate-400 font-medium">Created on:</span>
               <span className="text-slate-200">
                 {formatDate(workspace.created_at)}
@@ -255,7 +208,7 @@ function WorkspaceInfoPage() {
             </div>
 
             {/* Workspace ID */}
-            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg">
+            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg hover:bg-slate-700/40 transition-colors">
               <span className="text-slate-400 font-medium">Workspace ID:</span>
               <span className="font-mono bg-slate-700 px-3 py-1.5 rounded-md flex items-center gap-2 text-slate-200">
                 {workspace.id} <CopyButton textToCopy={workspace.id} />
@@ -263,7 +216,7 @@ function WorkspaceInfoPage() {
             </div>
 
             {/* Workspace Slug */}
-            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg">
+            <div className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg hover:bg-slate-700/40 transition-colors">
               <span className="text-slate-400 font-medium">
                 Workspace Slug:
               </span>
@@ -275,7 +228,7 @@ function WorkspaceInfoPage() {
         </div>
 
         {/* Members Card with Real-time Presence */}
-        <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl border border-slate-700/50 shadow-lg hover:shadow-xl transition-shadow">
+        <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-xl border border-slate-700/50 shadow-lg hover:shadow-xl transition-shadow animate-fade-in">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-cyan-400 flex items-center gap-2">
               <svg
@@ -309,7 +262,7 @@ function WorkspaceInfoPage() {
                   <div className="flex items-center gap-3">
                     {/* Avatar with online indicator */}
                     <div className="relative">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white text-sm">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white text-sm shadow-lg ring-2 ring-cyan-500/20">
                         {member.username?.charAt(0).toUpperCase() || "U"}
                       </div>
                       {/* Online/Offline Indicator */}
@@ -355,17 +308,9 @@ function WorkspaceInfoPage() {
           </ul>
         </div>
 
-        {/* Debug Info (remove in production) */}
-        <div className="mt-4 p-4 bg-slate-800/30 rounded-lg border border-slate-700/50">
-          <p className="text-slate-400 text-sm">
-            <strong>Debug Info:</strong> Connected: {isConnected ? "Yes" : "No"}
-            , Online Users: {Array.from(onlineUsers).join(", ") || "None"}
-          </p>
-        </div>
-
-        {/* Owner Warning (if user is owner) */}
+        {/* Owner Warning */}
         {isOwner && (
-          <div className="mt-6 bg-purple-500/10 border border-purple-500/50 rounded-xl p-4">
+          <div className="mt-6 bg-purple-500/10 border border-purple-500/50 rounded-xl p-4 animate-fade-in">
             <div className="flex items-start gap-3">
               <svg
                 className="w-5 h-5 text-purple-400 flex-shrink-0 mt-0.5"

@@ -8,7 +8,7 @@ import IconTasks from "./icons/IconTasks";
 import IconWhiteboard from "./icons/IconWhiteboard";
 import IconVideo from "./icons/IconVideo";
 import ProfileDropdown from "./ProfileDropdown";
-import CallNotificationIndicator from "./CallNotificationIndicator";
+import CallNotificationIndicator from "./videocall/CallNotificationIndicator";
 import { useWorkspacePresence } from "../hooks/useWorkspacePresence"; // Add this import
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -23,7 +23,6 @@ function WorkspaceLayout() {
   const [loading, setLoading] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const { onlineCount, isConnected } = useWorkspacePresence(workspaceSlug);
-
 
   const getAuthHeader = useCallback(() => {
     const session = JSON.parse(localStorage.getItem("session"));
@@ -157,24 +156,32 @@ function WorkspaceLayout() {
               </h1>
             </div>
           </div>
-          
-          {/* Online Status Indicator */}
-          <div className={`flex items-center gap-2 text-sm text-slate-400 mb-3 ${
-            isSidebarCollapsed ? "justify-center" : ""
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${
-              isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
-            }`}></span>
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              isSidebarCollapsed ? "w-0 opacity-0" : "w-full opacity-100"
-            }`}>
-              <span>{isConnected ? `${onlineCount} online` : "Connecting..."}</span>
+
+          {/* Online Status Indicator - Fixed height */}
+          <div
+            className={`flex items-center gap-2 text-sm text-slate-400 mb-3 h-5 ${
+              isSidebarCollapsed ? "justify-center" : ""
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
+              }`}
+            ></span>
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-in-out whitespace-nowrap ${
+                isSidebarCollapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
+              }`}
+            >
+              <span>
+                {isConnected ? `${onlineCount} online` : "Connecting..."}
+              </span>
             </div>
           </div>
 
           <button
             onClick={handleBackToDashboard}
-            className={`w-full text-sm font-semibold transition-all duration-200 flex items-center space-x-3 px-4 py-3 rounded-lg bg-slate-800 text-slate-300 hover:bg-cyan-500 hover:text-slate-900 ${
+            className={`w-full text-sm font-semibold transition-all duration-200 flex items-center space-x-3 px-4 py-3 rounded-lg bg-slate-800 text-slate-300 hover:bg-cyan-500/90 hover:text-white hover:shadow-lg hover:shadow-cyan-500/20 ${
               isSidebarCollapsed ? "justify-center" : ""
             }`}
           >
@@ -213,7 +220,7 @@ function WorkspaceLayout() {
                 className={({ isActive }) =>
                   `flex items-center space-x-3 px-3 py-3 rounded-lg transition-colors ${
                     isActive
-                      ? "bg-cyan-500/10 text-cyan-400"
+                      ? "bg-cyan-500/10 text-cyan-400 shadow-lg shadow-cyan-500/5"
                       : "text-slate-400 hover:bg-slate-800 hover:text-cyan-300"
                   }`
                 }

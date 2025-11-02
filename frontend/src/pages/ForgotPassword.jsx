@@ -2,7 +2,6 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
-import AuthLayout from "../components/AuthLayout";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -32,139 +31,259 @@ function ForgotPassword() {
   };
 
   return (
-    <AuthLayout title="Reset Your Password">
-      {!isSuccess ? (
-        <>
-          <p className="text-slate-400 text-center mb-6 text-sm">
-            Enter your email address and we'll send you a link to reset your
-            password.
-          </p>
+    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6 relative overflow-hidden">
+      {/* Animated Background */}
+      <div className="fixed inset-0 opacity-30 pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500 rounded-full blur-3xl animate-pulse"></div>
+        <div
+          className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        ></div>
+      </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label
-                className="block text-sm font-semibold text-slate-400 mb-2"
-                htmlFor="email"
+      {/* Back to Home Link */}
+      <Link
+        to="/"
+        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-cyan-400 transition-colors group"
+      >
+        <svg
+          className="w-5 h-5 group-hover:-translate-x-1 transition-transform"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M10 19l-7-7m0 0l7-7m-7 7h18"
+          />
+        </svg>
+        <span className="font-medium">Back to Home</span>
+      </Link>
+
+      {/* Reset Password Card */}
+      <div className="relative w-full max-w-md">
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-2xl blur-2xl"></div>
+        <div className="relative bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 animate-fade-in-up">
+          {/* Logo and Title */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-2xl mb-4 shadow-lg shadow-cyan-500/25">
+              <svg
+                className="w-8 h-8 text-white"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
               >
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-800/70 border border-slate-600/50 rounded-xl text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all duration-200"
-                required
-              />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                />
+              </svg>
             </div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent mb-2">
+              Reset Your Password
+            </h1>
+            <p className="text-slate-400 text-sm">
+              {!isSuccess
+                ? "Enter your email and we'll send you a reset link"
+                : "Check your email for the reset link"}
+            </p>
+          </div>
 
-            {message && !isSuccess && (
-              <div className="bg-red-900/40 border border-red-500/50 text-red-200 px-4 py-3 rounded-xl text-sm backdrop-blur-sm">
-                <div className="flex items-center">
-                  <svg
-                    className="w-5 h-5 mr-2 flex-shrink-0"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
+          {!isSuccess ? (
+            <>
+              {/* Form */}
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div>
+                  <label
+                    className="block text-sm font-semibold text-slate-300 mb-2"
+                    htmlFor="email"
                   >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {message}
+                    Email Address
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 focus:outline-none transition-all duration-200"
+                    required
+                  />
                 </div>
-              </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-900 py-3 rounded-xl font-bold transition-all duration-200 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center">
+                {message && !isSuccess && (
+                  <div className="bg-red-500/10 border border-red-500/50 text-red-300 px-4 py-3 rounded-xl text-sm backdrop-blur-sm animate-shake">
+                    <div className="flex items-center gap-2">
+                      <svg
+                        className="w-5 h-5 flex-shrink-0"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      <span>{message}</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white py-3.5 rounded-xl font-bold transition-all duration-200 shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg
+                        className="animate-spin h-5 w-5"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      Sending Reset Link...
+                    </span>
+                  ) : (
+                    "Send Reset Link"
+                  )}
+                </button>
+              </form>
+            </>
+          ) : (
+            <div className="space-y-6 animate-fade-in">
+              {/* Success State */}
+              <div className="bg-emerald-500/10 border border-emerald-500/50 rounded-xl p-6 text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-500/20 rounded-full mb-4">
                   <svg
-                    className="animate-spin -ml-1 mr-3 h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
+                    className="w-8 h-8 text-emerald-400"
                     fill="none"
                     viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
                   >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
                     <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
                   </svg>
-                  Sending Reset Link...
-                </span>
-              ) : (
-                "Send Reset Link"
-              )}
-            </button>
-          </form>
-        </>
-      ) : (
-        <div className="text-center">
-          <div className="bg-emerald-900/40 border border-emerald-500/50 text-emerald-200 px-4 py-3 rounded-xl text-sm backdrop-blur-sm mb-6">
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mb-3">
-                <svg
-                  className="w-6 h-6 text-emerald-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  ></path>
-                </svg>
+                </div>
+                <p className="text-emerald-300 font-medium mb-2">{message}</p>
+                <p className="text-slate-400 text-sm">
+                  Didn't receive it? Check your spam folder or try again.
+                </p>
               </div>
-              <p className="font-medium">{message}</p>
+
+              <button
+                onClick={() => {
+                  setIsSuccess(false);
+                  setEmail("");
+                  setMessage("");
+                }}
+                className="w-full bg-slate-800/50 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 text-white py-3 rounded-xl font-semibold transition-all duration-200"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-800"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-slate-900 text-slate-500">
+                Remembered your password?
+              </span>
             </div>
           </div>
 
-          <p className="text-slate-400 text-sm mb-4">
-            Didn't receive the email? Check your spam folder or try again.
-          </p>
-
-          <button
-            onClick={() => {
-              setIsSuccess(false);
-              setEmail("");
-              setMessage("");
-            }}
-            className="text-cyan-400 hover:text-cyan-300 transition-colors text-sm font-medium"
-          >
-            Try Again
-          </button>
+          {/* Sign In Link */}
+          <div className="text-center">
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-2 text-slate-300 hover:text-cyan-400 transition-colors font-medium group"
+            >
+              <span>Back to Sign In</span>
+              <svg
+                className="w-4 h-4 group-hover:translate-x-1 transition-transform"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 7l5 5m0 0l-5 5m5-5H6"
+                />
+              </svg>
+            </Link>
+          </div>
         </div>
-      )}
-
-      <div className="mt-8 text-center pt-6 border-t border-slate-700/50">
-        <p className="text-slate-400">
-          Remembered your password?{" "}
-          <Link
-            to="/login"
-            className="font-semibold text-cyan-400 hover:text-cyan-300 transition-colors duration-200"
-          >
-            Sign In
-          </Link>
-        </p>
       </div>
-    </AuthLayout>
+
+      <style>{`
+        @keyframes fade-in-up {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+
+        .animate-fade-in-up {
+          animation: fade-in-up 0.6s ease-out;
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.4s ease-out;
+        }
+
+        .animate-shake {
+          animation: shake 0.3s ease-in-out;
+        }
+      `}</style>
+    </div>
   );
 }
 

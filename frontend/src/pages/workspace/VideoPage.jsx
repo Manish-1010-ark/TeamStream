@@ -4,9 +4,9 @@ import { useParams } from "react-router-dom";
 import useSocketSignaling from "../../hooks/useSocketSignaling";
 import useUserMedia from "../../hooks/useUserMedia";
 import usePeerJSConnections from "../../hooks/usePeerJSConnections";
-import PreCallLobby from "../../components/PreCallLobby";
-import CallScreen from "../../components/CallScreen";
-import ActiveCallCard from "../../components/ActiveCallCard";
+import PreCallLobby from "../../components/videocall/PreCallLobby";
+import CallScreen from "../../components/videocall/CallScreen";
+import ActiveCallCard from "../../components/videocall/ActiveCallCard";
 
 /**
  * VideoPage - Main video call coordinator
