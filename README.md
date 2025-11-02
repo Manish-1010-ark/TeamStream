@@ -9,9 +9,9 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Liveblocks](https://img.shields.io/badge/Liveblocks-000000?style=for-the-badge&logo=liveblocks&logoColor=white)](https://liveblocks.io/)
 
-[Live Demo →](https://your-demo-link.com)
+[Live Demo →](https://team-stream-wine.vercel.app/)
 
-![TeamStream Dashboard](https://your-screenshot-url.jpg)
+![TeamStream Dashboard](https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/dashboard.png)
 
 ## About the Project
 
@@ -69,34 +69,47 @@ Whether you're managing a sprint, brainstorming ideas, or catching up with your 
 
 <table>
   <tr>
-    <td><img src="https-placeholder-for-screenshot-1" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-2" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-3" alt="Feature screenshot" width="300"></td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/landing_page.png" alt="Landing Page" width="400"/>
+      <br />
+      <sub><b>Landing Page</b></sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/login.png" alt="Login" width="400"/>
+      <br />
+      <sub><b>Login & Authentication</b></sub>
+    </td>
   </tr>
   <tr>
-    <td><img src="https-placeholder-for-screenshot-4" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-5" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-6" alt="Feature screenshot" width="300"></td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/dashboard.png" alt="Dashboard" width="400"/>
+      <br />
+      <sub><b>Workspace Dashboard</b></sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/chat.png" alt="Chat" width="400"/>
+      <br />
+      <sub><b>Real-time Chat</b></sub>
+    </td>
   </tr>
   <tr>
-    <td><img src="https-placeholder-for-screenshot-7" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-8" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-9" alt="Feature screenshot" width="300"></td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/taskboard.png" alt="Task Board" width="400"/>
+      <br />
+      <sub><b>Kanban Task Board</b></sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/documents.png" alt="Documents" width="400"/>
+      <br />
+      <sub><b>Collaborative Documents</b></sub>
+    </td>
   </tr>
   <tr>
-    <td><img src="https-placeholder-for-screenshot-10" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-11" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-12" alt="Feature screenshot" width="300"></td>
-  </tr>
-  <tr>
-    <td><img src="https-placeholder-for-screenshot-13" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-14" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-15" alt="Feature screenshot" width="300"></td>
-  </tr>
-  <tr>
-    <td><img src="https-placeholder-for-screenshot-16" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-17" alt="Feature screenshot" width="300"></td>
-    <td><img src="https-placeholder-for-screenshot-18" alt="Feature screenshot" width="300"></td>
+    <td align="center" colspan="2">
+      <img src="https://raw.githubusercontent.com/Manish-1010-ark/TeamStream/main/screenshots/whiteboard.png" alt="Whiteboard" width="400"/>
+      <br />
+      <sub><b>Collaborative Whiteboard</b></sub>
+    </td>
   </tr>
 </table>
 
@@ -119,21 +132,21 @@ Before you begin, ensure you have the following installed and set up:
 
 1. Navigate to the backend directory:
 
-```bash
+   ```bash
    cd backend
-```
+   ```
 
 2. Install dependencies:
 
-```bash
+   ```bash
    npm install
-```
+   ```
 
 3. Create your environment file:
 
-```bash
+   ```bash
    cp .env.example .env
-```
+   ```
 
 4. Configure your environment variables in `backend/.env`:
 
@@ -144,31 +157,31 @@ Before you begin, ensure you have the following installed and set up:
 
 5. Start the backend development server:
 
-```bash
+   ```bash
    npm run dev
-```
+   ```
 
-The backend server should now be running on `http://localhost:3001`
+   The backend server should now be running on `http://localhost:3001`
 
 ### Frontend Setup
 
 1. Navigate to the frontend directory:
 
-```bash
+   ```bash
    cd frontend
-```
+   ```
 
 2. Install dependencies:
 
-```bash
+   ```bash
    npm install
-```
+   ```
 
 3. Create your environment file:
 
-```bash
+   ```bash
    cp .env.example .env
-```
+   ```
 
 4. Configure your environment variables in `frontend/.env`:
 
@@ -178,11 +191,11 @@ The backend server should now be running on `http://localhost:3001`
 
 5. Start the frontend development server:
 
-```bash
+   ```bash
    npm run dev
-```
+   ```
 
-The frontend application should now be running on `http://localhost:5173`
+   The frontend application should now be running on `http://localhost:5173`
 
 6. Open your browser and navigate to `http://localhost:5173` to see TeamStream in action!
 
